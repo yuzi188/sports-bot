@@ -1,0 +1,335 @@
+"""
+智能搜尋引擎 v1
+流程：輸入 → AI語意解析 → 隊名匹配（含模糊） → 聯盟判斷 → API查詢 → 結果過濾
+"""
+
+import re
+import os
+from rapidfuzz import process, fuzz
+from openai import OpenAI
+from team_db import (
+    TEAM_DATABASE, ALIAS_INDEX, EN_TO_CN,
+    LEAGUE_TO_ENDPOINT, ALL_CN_ALIASES, ALL_EN_ALIASES,
+)
+
+# OpenAI client（用於 AI 語意解析和翻譯）
+client = OpenAI()
+
+# 運動類型關鍵字
+SPORT_KEYWORDS = {
+    "足球": "soccer", "英超": "soccer", "西甲": "soccer",
+    "德甲": "soccer", "意甲": "soccer", "法甲": "soccer",
+    "歐冠": "soccer", "歐霸": "soccer",
+    "soccer": "soccer", "football": "soccer",
+    "棒球": "baseball", "mlb": "baseball",
+    "美國職棒": "baseball", "職棒": "baseball", "baseball": "baseball",
+    "籃球": "basketball", "nba": "basketball",
+    "美國職籃": "basketball", "職籃": "basketball", "basketball": "basketball",
+    "冰球": "hockey", "nhl": "hockey", "hockey": "hockey",
+    "美式足球": "football_us", "nfl": "football_us", "橄欖球": "football_us",
+    "wbc": "wbc", "經典賽": "wbc", "世界棒球經典賽": "wbc",
+    "棒球經典賽": "wbc", "世界棒球": "wbc",
+}
+
+# sport_filter → ESPN 端點列表
+SPORT_ENDPOINTS = {
+    "soccer": [("soccer", "all", "⚽")],
+    "baseball": [("baseball", "mlb", "⚾"), ("baseball", "world-baseball-classic", "⚾")],
+    "basketball": [("basketball", "nba", "🏀")],
+    "hockey": [("hockey", "nhl", "🏒")],
+    "football_us": [("football", "nfl", "🏈")],
+    "wbc": [("baseball", "world-baseball-classic", "⚾")],
+}
+
+ALL_ENDPOINTS = [
+    ("soccer", "all", "⚽"),
+    ("baseball", "mlb", "⚾"),
+    ("baseball", "world-baseball-classic", "⚾"),
+    ("basketball", "nba", "🏀"),
+    ("hockey", "nhl", "🏒"),
+    ("football", "nfl", "🏈"),
+]
+
+
+def smart_parse(query: str) -> dict:
+    """
+    智能解析使用者查詢
+    回傳：
+    {
+        "original": 原始查詢,
+        "teams": [{"en_name": ..., "cn_name": ..., "league": ..., "confidence": ...}, ...],
+        "sport_filter": str or None,
+        "is_sport_only": bool,
+        "endpoints": [(sport, league, emoji), ...],  # 要查詢的 API 端點
+    }
+    """
+    text = query.strip()
+
+    # Step 1: 檢查運動類型關鍵字
+    sport_filter = None
+    is_sport_only = False
+    remaining = text
+
+    # 從長到短匹配
+    for kw in sorted(SPORT_KEYWORDS.keys(), key=len, reverse=True):
+        if kw.lower() in text.lower():
+            sport_filter = SPORT_KEYWORDS[kw]
+            remaining = re.sub(re.escape(kw), '', text, flags=re.IGNORECASE).strip()
+            if not remaining:
+                is_sport_only = True
+            break
+
+    # Step 2: 隊名匹配（精確 + 模糊）
+    teams = []
+    if not is_sport_only:
+        teams = match_teams(remaining)
+
+    # Step 3: 自動判斷聯盟 → 決定要查哪些端點
+    endpoints = determine_endpoints(teams, sport_filter)
+
+    return {
+        "original": text,
+        "teams": teams,
+        "sport_filter": sport_filter,
+        "is_sport_only": is_sport_only,
+        "endpoints": endpoints,
+    }
+
+
+def match_teams(text: str) -> list:
+    """
+    從文字中匹配隊名
+    優先精確匹配，找不到再模糊匹配
+    """
+    teams = []
+    remaining = text
+
+    # Step A: 精確匹配（從長到短）
+    sorted_aliases = sorted(ALIAS_INDEX.keys(), key=len, reverse=True)
+    for alias in sorted_aliases:
+        if len(alias) < 2:
+            continue
+        if alias in remaining.lower():
+            info = ALIAS_INDEX[alias]
+            # 避免重複
+            if not any(t["en_name"] == info["en_name"] for t in teams):
+                teams.append({
+                    "en_name": info["en_name"],
+                    "cn_name": info["cn_name"],
+                    "league": info["league"],
+                    "confidence": 100,
+                    "matched_by": "exact",
+                })
+            # 從 remaining 中移除已匹配的部分
+            idx = remaining.lower().find(alias)
+            remaining = remaining[:idx] + remaining[idx + len(alias):]
+            remaining = remaining.strip()
+
+    # Step B: 如果精確匹配沒找到，嘗試模糊匹配
+    if not teams and remaining.strip():
+        # 分割剩餘文字
+        parts = re.split(r'\s+|vs\.?|VS\.?|對|和|v\s', remaining)
+        parts = [p.strip() for p in parts if p.strip() and len(p.strip()) >= 2]
+
+        for part in parts:
+            # 判斷是中文還是英文
+            is_chinese = any('\u4e00' <= c <= '\u9fff' for c in part)
+
+            if is_chinese:
+                candidates = ALL_CN_ALIASES
+                # 中文短詞用字元級匹配
+                if len(part) <= 3:
+                    # 先嘗試單字元差異匹配
+                    char_match = _chinese_char_match(part, candidates)
+                    if char_match:
+                        info = ALIAS_INDEX.get(char_match.lower())
+                        if info and not any(t["en_name"] == info["en_name"] for t in teams):
+                            teams.append({
+                                "en_name": info["en_name"],
+                                "cn_name": info["cn_name"],
+                                "league": info["league"],
+                                "confidence": 75,
+                                "matched_by": "fuzzy",
+                            })
+                        continue
+            else:
+                candidates = ALL_EN_ALIASES
+
+            if not candidates:
+                continue
+
+            # 模糊匹配 - 使用 partial_ratio 更適合不同長度的比較
+            result = process.extractOne(
+                part,
+                candidates,
+                scorer=fuzz.WRatio,
+                score_cutoff=50,
+            )
+
+            if result:
+                matched_alias, score, _ = result
+                info = ALIAS_INDEX.get(matched_alias.lower())
+                if info and not any(t["en_name"] == info["en_name"] for t in teams):
+                    teams.append({
+                        "en_name": info["en_name"],
+                        "cn_name": info["cn_name"],
+                        "league": info["league"],
+                        "confidence": score,
+                        "matched_by": "fuzzy",
+                    })
+
+    return teams
+
+
+def _chinese_char_match(query: str, candidates: list) -> str:
+    """
+    中文字元級匹配：
+    對於2-3字的中文，如果有一個字不同但其他字相同，就算匹配
+    例如：洋機 → 洋基（1字不同）
+    """
+    best_match = None
+    best_overlap = 0
+
+    for candidate in candidates:
+        if abs(len(candidate) - len(query)) > 1:
+            continue
+        # 計算共同字元數
+        common = sum(1 for c in query if c in candidate)
+        min_len = min(len(query), len(candidate))
+        if min_len == 0:
+            continue
+        overlap_ratio = common / min_len
+        # 至少 50% 字元相同（2字詞允許1字不同）
+        if overlap_ratio >= 0.5 and common > best_overlap:
+            best_overlap = common
+            best_match = candidate
+
+    return best_match
+
+
+def determine_endpoints(teams: list, sport_filter: str = None) -> list:
+    """
+    根據匹配到的隊伍和運動類型，決定要查詢哪些 API 端點
+    """
+    # 如果有明確的運動類型
+    if sport_filter:
+        return SPORT_ENDPOINTS.get(sport_filter, ALL_ENDPOINTS)
+
+    # 如果有匹配到隊伍，根據隊伍的聯盟決定
+    if teams:
+        leagues = set(t["league"] for t in teams)
+        endpoints = []
+        seen = set()
+
+        for league in leagues:
+            # 聯盟 → ESPN 端點
+            if league in LEAGUE_TO_ENDPOINT:
+                ep = LEAGUE_TO_ENDPOINT[league]
+                key = f"{ep[0]}/{ep[1]}"
+                if key not in seen:
+                    seen.add(key)
+                    # 決定 emoji
+                    emoji_map = {
+                        "baseball": "⚾", "basketball": "🏀",
+                        "hockey": "🏒", "football": "🏈", "soccer": "⚽",
+                    }
+                    emoji = emoji_map.get(ep[0], "🏟")
+                    endpoints.append((ep[0], ep[1], emoji))
+            else:
+                # 國家隊可能同時出現在足球和 WBC
+                if league in ("WBC", "足球"):
+                    for ep_sport, ep_league, ep_emoji in ALL_ENDPOINTS:
+                        key = f"{ep_sport}/{ep_league}"
+                        if key not in seen:
+                            # WBC 隊伍搜尋 WBC + 足球
+                            if league == "WBC" and ep_league in ("world-baseball-classic", "all"):
+                                seen.add(key)
+                                endpoints.append((ep_sport, ep_league, ep_emoji))
+                            elif league == "足球" and ep_league == "all":
+                                seen.add(key)
+                                endpoints.append((ep_sport, ep_league, ep_emoji))
+
+        if endpoints:
+            return endpoints
+
+    # 預設搜尋所有端點
+    return ALL_ENDPOINTS
+
+
+def match_event_smart(event: dict, teams: list) -> bool:
+    """
+    智能匹配：用 displayName 和 shortDisplayName 匹配
+    只匹配查詢中的隊伍，不會誤匹配
+    """
+    competitions = event.get("competitions", [])
+    if not competitions:
+        return False
+    competitors = competitions[0].get("competitors", [])
+
+    # 收集賽事中每支隊伍的名稱
+    event_team_names = set()
+    for c in competitors:
+        team = c.get("team", {})
+        for field in ["displayName", "shortDisplayName", "name"]:
+            val = team.get(field, "")
+            if val:
+                event_team_names.add(val.lower())
+
+    # 對每個查詢的隊伍，檢查是否在賽事中
+    for t in teams:
+        en_name = t["en_name"].lower()
+        # 方法 1: 英文全名完全匹配
+        if en_name in event_team_names:
+            return True
+        # 方法 2: 英文全名的最後一個詞（暱稱）匹配 shortDisplayName
+        short_name = en_name.split()[-1] if " " in en_name else en_name
+        if len(short_name) > 3 and short_name in event_team_names:
+            return True
+        # 方法 3: event 的名稱包含隊伍全名
+        for etn in event_team_names:
+            if len(en_name) > 4 and en_name in etn:
+                return True
+            if len(etn) > 4 and etn in en_name:
+                return True
+
+    return False
+
+
+def translate_name(en_display_name: str) -> str:
+    """英文隊名翻譯成中文（查表 + AI fallback）"""
+    cn = EN_TO_CN.get(en_display_name.lower())
+    if cn:
+        return cn
+
+    # 嘗試部分匹配
+    en_lower = en_display_name.lower()
+    for en_full, cn_name in EN_TO_CN.items():
+        if en_lower in en_full or en_full in en_lower:
+            return cn_name
+
+    # 模糊匹配
+    all_en_keys = list(EN_TO_CN.keys())
+    if all_en_keys:
+        result = process.extractOne(en_lower, all_en_keys, scorer=fuzz.ratio, score_cutoff=70)
+        if result:
+            return EN_TO_CN[result[0]]
+
+    # AI fallback
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4.1-nano",
+            messages=[{
+                "role": "user",
+                "content": f"將以下體育隊名翻譯成繁體中文，只回覆中文名稱：{en_display_name}"
+            }],
+            max_tokens=20,
+            temperature=0,
+        )
+        cn_name = resp.choices[0].message.content.strip()
+        if cn_name and len(cn_name) < 20:
+            EN_TO_CN[en_display_name.lower()] = cn_name
+            return cn_name
+    except:
+        pass
+
+    return en_display_name
