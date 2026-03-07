@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 client = OpenAI()
 
 # 系統 prompt：定義 AI 助理的人格與職責
-SYSTEM_PROMPT = """你是「世界體育數據室」的 AI 助理小體，專精全球體育資訊。
+SYSTEM_PROMPT = """你是「世界體育數據室」的 AI 助理魚姐，專精全球體育資訊。
 
 你的個性與風格：
 - 親切友善，像真人客服一樣自然
