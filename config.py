@@ -2,9 +2,8 @@
 體育分析機器人 - 配置文件
 """
 
+# Telegram 設定
 import os
-
-# Telegram 設定（從環境變數讀取）
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "@LA11118")
 
