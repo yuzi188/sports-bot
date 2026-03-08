@@ -10,8 +10,15 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-# OpenAI 客戶端（自動從 OPENAI_API_KEY 環境變數讀取）
-client = OpenAI()
+# 延遲初始化，避免啟動時環境變數尚未載入
+_client = None
+
+def _get_client():
+    global _client
+    if _client is None:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        _client = OpenAI(api_key=api_key)
+    return _client
 
 # 系統 prompt：定義 AI 助理的人格與職責
 SYSTEM_PROMPT = """你是「世界體育數據室」的 AI 助理 🐟，專精全球體育資訊。
@@ -70,7 +77,7 @@ def get_ai_response(user_id: int, user_message: str) -> str:
         messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
 
         # 呼叫 OpenAI API
-        response = client.chat.completions.create(
+        response = _get_client().chat.completions.create(
             model="gpt-4.1-mini",
             messages=messages,
             max_tokens=500,

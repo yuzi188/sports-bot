@@ -5,7 +5,15 @@ AI 賽事分析模組 - 使用 OpenAI API 生成專業分析
 import os
 from openai import OpenAI
 
-client = OpenAI()  # 使用預設配置
+# 延遲初始化，避免啟動時環境變數尚未載入
+_client = None
+
+def get_client():
+    global _client
+    if _client is None:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        _client = OpenAI(api_key=api_key)
+    return _client
 
 MODEL = "gpt-4.1-mini"
 
@@ -77,7 +85,7 @@ def generate_match_analysis(match_data: dict, sport_type: str, league_name: str)
 請提供簡短的即時分析（100字以內），包含目前局勢和可能走向。"""
 
     try:
-        response = client.chat.completions.create(
+        response = get_client().chat.completions.create(
             model=MODEL,
             messages=[
                 {"role": "system", "content": "你是一位專業的體育數據分析師，擅長用簡潔有力的繁體中文撰寫賽事分析。你的分析基於數據，客觀公正。"},
@@ -112,7 +120,7 @@ def generate_daily_preview(events_summary: str) -> str:
 - 適合 Telegram 頻道閱讀"""
 
     try:
-        response = client.chat.completions.create(
+        response = get_client().chat.completions.create(
             model=MODEL,
             messages=[
                 {"role": "system", "content": "你是一位專業的體育媒體主編，擅長撰寫吸引人的賽事預覽。使用繁體中文。"},
@@ -147,7 +155,7 @@ def generate_post_game_review(results_summary: str) -> str:
 - 適合 Telegram 頻道閱讀"""
 
     try:
-        response = client.chat.completions.create(
+        response = get_client().chat.completions.create(
             model=MODEL,
             messages=[
                 {"role": "system", "content": "你是一位專業的體育媒體主編，擅長撰寫精彩的賽後復盤。使用繁體中文。"},
@@ -200,7 +208,7 @@ def generate_deep_analysis(match_data: dict, sport_type: str, league_name: str, 
 - 適合 Telegram 頻道"""
 
     try:
-        response = client.chat.completions.create(
+        response = get_client().chat.completions.create(
             model=MODEL,
             messages=[
                 {"role": "system", "content": "你是一位頂級體育數據分析師，擅長撰寫深度分析文章。你的分析結合數據和戰術觀察，專業但易於理解。使用繁體中文。"},
