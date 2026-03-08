@@ -43,7 +43,7 @@ tz = pytz.timezone(TIMEZONE)
 
 GAME_URL = "http://la1111.ofa168hk.com/"
 CHANNEL_URL = "https://t.me/LA11118"
-CS_URL = "https://t.me/OFA168Abe1"
+CS_URL = "https://t.me/yu_888yu"
 BOT_USERNAME = "LA1111_bot"  # 邀請連結用的 Bot username
 TARGET_GROUP = "@G5ofa"
 
@@ -514,7 +514,7 @@ async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE,
         if update.message:
             await update.message.reply_text(
                 "👥 客服列表\n\n"
-                "👸 VIP 客服：@OFA168abe\n\n"
+                "👸 VIP 客服：@yu_888yu\n\n"
                 "有任何問題都可以直接聯繫！"
             )
 
