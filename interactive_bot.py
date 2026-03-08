@@ -1,6 +1,6 @@
 """
-互動式 Telegram Bot V10 - 上下文感知 + AI 全接管 + 即時詳細資料
-修復：加入 ESPN summary API 即時詳細資料（投手/打者/進球/換人）
+互動式 Telegram Bot V11 - 上下文感知 + AI 全接管 + 即時詳細資料 + 娛樂城選單 + 歡迎訊息
+新增：底部固定鍵盤選單、新成員歡迎訊息、/start 優化
 """
 
 import sys
@@ -11,7 +11,7 @@ import pytz
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from telegram import Update, BotCommand
+from telegram import Update, BotCommand, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -36,6 +36,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 tz = pytz.timezone(TIMEZONE)
+
+
+# ===== 娛樂城設定 =====
+
+GAME_URL = "http://la1111.ofa168hk.com/"
+CHANNEL_URL = "https://t.me/LA11118"
+CS_URL = "https://t.me/OFA168Abe1"
+TARGET_GROUP = "@G5ofa"
+
+# 底部固定鍵盤（私訊用）
+MAIN_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["🎮 遊戲"],
+        ["💰 帳戶", "📢 官方頻道"],
+        ["👥 客服列表"],
+    ],
+    resize_keyboard=True,
+    is_persistent=True,
+)
+
+# 按鈕文字常數（方便比對）
+BTN_GAME = "🎮 遊戲"
+BTN_ACCOUNT = "💰 帳戶"
+BTN_CHANNEL = "📢 官方頻道"
+BTN_CS = "👥 客服列表"
+MENU_BUTTONS = {BTN_GAME, BTN_ACCOUNT, BTN_CHANNEL, BTN_CS}
 
 
 # ===== 查詢判斷（保留作為 fallback） =====
@@ -103,26 +129,18 @@ async def reply_split(update: Update, text: str):
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /start")
-    await reply(update, """🏟 歡迎來到【世界體育數據室】V9
-
-直接輸入隊名或運動類型即可查詢。
-
-💡 查詢範例：
-• 中華台北
-• 洋基 紅襪
-• WBC / NBA / 足球
-
-📊 指令：
-• /score 隊名 → 即時比分
-• /today → 今日所有賽事
-• /live → 進行中的比賽
-• /hot → 今日熱門賽事
-• /leaders → 排行榜
-• /analyze 隊名 → AI 分析預測
-• /help → 使用說明
-
-🤖 有任何問題都可以直接問我！
-📡 t.me/LA11118""")
+    welcome_text = (
+        "🏆 歡迎來到 世界體育數據室！\n\n"
+        "✅ MLB / NBA / NHL / 足球 即時比分\n"
+        "✅ AI 勝率預測與比賽分析\n"
+        "✅ 直接問任何體育問題，不需要指令！\n\n"
+        f"🎮 合作娛樂平台：{GAME_URL}\n\n"
+        "立即點擊下方【🎮 遊戲】進入！"
+    )
+    if update.message:
+        await update.message.reply_text(welcome_text, reply_markup=MAIN_KEYBOARD)
+    elif update.channel_post:
+        await update.channel_post.reply_text(welcome_text)
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -414,6 +432,98 @@ async def cmd_odds(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply(update, "❌ 查詢失敗，請稍後再試")
 
 
+# ===== 娛樂城選單按鈕處理 =====
+
+async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
+    """
+    處理底部固定鍵盤的按鈕點擊。
+    回傳 True 表示已處理，False 表示不是選單按鈕。
+    """
+    if text not in MENU_BUTTONS:
+        return False
+
+    user_id = update.effective_user.id if update.effective_user else 0
+
+    if text == BTN_GAME:
+        # 遊戲按鈕：帶 tgid 參數的 InlineKeyboard
+        game_link = f"{GAME_URL}?tgid={user_id}"
+        inline_kb = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🎮 立即進入遊戲", url=game_link)]]
+        )
+        if update.message:
+            await update.message.reply_text(
+                "🎮 點擊下方按鈕進入遊戲平台！",
+                reply_markup=inline_kb,
+            )
+
+    elif text == BTN_ACCOUNT:
+        # 帳戶按鈕：顯示 Telegram ID
+        if update.message:
+            await update.message.reply_text(
+                f"💰 您的 Telegram ID：`{user_id}`",
+                parse_mode="Markdown",
+            )
+
+    elif text == BTN_CHANNEL:
+        # 官方頻道
+        if update.message:
+            await update.message.reply_text(f"📢 官方頻道：{CHANNEL_URL}")
+
+    elif text == BTN_CS:
+        # 客服列表
+        if update.message:
+            await update.message.reply_text(f"👥 客服聯繫：{CS_URL}")
+
+    return True
+
+
+# ===== 新成員歡迎訊息 =====
+
+async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    當有新成員加入群組時，發送歡迎訊息。
+    使用 filters.StatusUpdate.NEW_CHAT_MEMBERS 觸發。
+    """
+    if not update.message or not update.message.new_chat_members:
+        return
+
+    bot_id = context.bot.id
+    new_members = update.message.new_chat_members
+
+    for member in new_members:
+        # 跳過 Bot 本身加入的情況
+        if member.id == bot_id:
+            logger.info("Bot 自己加入群組，跳過歡迎訊息")
+            continue
+
+        # 取得顯示名稱，優先用 first_name，再用 username
+        display_name = member.first_name or member.username or "新朋友"
+        # 若有 username，加上 @mention（Markdown 格式）
+        if member.username:
+            mention = f"@{member.username}"
+        else:
+            # 用 Markdown mention（無 username 時用 tg://user?id=）
+            mention = f"[{display_name}](tg://user?id={member.id})"
+
+        welcome_msg = (
+            f"👋 歡迎 {mention} 加入！\n\n"
+            "🏆 世界體育數據室 提供：\n"
+            "• MLB / NBA / NHL / 足球 即時比分\n"
+            "• AI 勝率預測與比賽分析\n"
+            "• 直接問 Bot 任何體育問題，不需要指令！\n\n"
+            f"💼 合作夥伴：{CS_URL}"
+        )
+
+        try:
+            await update.message.reply_text(
+                welcome_msg,
+                parse_mode="Markdown",
+            )
+            logger.info(f"已發送歡迎訊息給 {display_name} (id={member.id})")
+        except Exception as e:
+            logger.error(f"發送歡迎訊息失敗: {e}")
+
+
 # ===== 核心：上下文感知訊息處理 =====
 
 async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
@@ -497,20 +607,26 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理私訊"""
+    """處理私訊（含選單按鈕）"""
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
     logger.info(f"[私訊] {text}")
+    # 優先處理選單按鈕，避免被 AI 接管
+    if await handle_menu_button(update, context, text):
+        return
     await dispatch_message(update, context, text)
 
 
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理群組訊息"""
+    """處理群組訊息（含選單按鈕）"""
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
     logger.info(f"[群組] {text}")
+    # 優先處理選單按鈕
+    if await handle_menu_button(update, context, text):
+        return
     await dispatch_message(update, context, text)
 
 
@@ -640,9 +756,15 @@ async def setup_commands(app: Application):
 
 
 def main():
-    logger.info("🤖 啟動智能查詢 Bot V9（上下文感知版）...")
+    logger.info("🤖 啟動智能查詢 Bot V11（娛樂城選單 + 歡迎訊息版）...")
 
     app = Application.builder().token(BOT_TOKEN).build()
+
+    # 新成員歡迎訊息（群組）
+    app.add_handler(MessageHandler(
+        filters.StatusUpdate.NEW_CHAT_MEMBERS,
+        handle_new_member
+    ))
 
     # 指令
     app.add_handler(CommandHandler("start", cmd_start))
@@ -676,7 +798,7 @@ def main():
 
     app.post_init = setup_commands
 
-    logger.info("✅ Bot V10 已啟動，等待查詢...")
+    logger.info("✅ Bot V11 已啟動，等待查詢...")
     app.run_polling(
         drop_pending_updates=True,
         allowed_updates=["message", "channel_post", "my_chat_member"],
