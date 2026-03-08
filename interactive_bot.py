@@ -423,6 +423,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await reply(update, "⚠️ 請輸入隊名\n範例：洋基 分析")
     elif is_query(text):
         await handle_score_query(update, text)
+    else:
+        # AI 客服聊天 fallback
+        try:
+            from modules.ai_chat import get_ai_response
+            user_id = update.effective_user.id if update.effective_user else 0
+            ai_reply = get_ai_response(user_id, text)
+            await reply(update, ai_reply)
+        except Exception as e:
+            logger.error(f"AI chat error: {e}")
 
 
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -448,6 +457,15 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
             await cmd_analyze(update, context)
     elif is_query(text):
         await handle_score_query(update, text)
+    else:
+        # AI 客服聊天 fallback
+        try:
+            from modules.ai_chat import get_ai_response
+            user_id = update.effective_user.id if update.effective_user else 0
+            ai_reply = get_ai_response(user_id, text)
+            await reply(update, ai_reply)
+        except Exception as e:
+            logger.error(f"AI chat error: {e}")
 
 
 async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
