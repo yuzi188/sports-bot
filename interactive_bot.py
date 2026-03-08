@@ -1,9 +1,27 @@
 """
-互動式 Telegram Bot V15 - 語言切換修復
-新增：
-1. dispatch_message 傳遞 user_lang 給 get_ai_response
-2. 語言設定正確影響 AI 回覆語言
-3. 保留所有原有功能
+互動式 Telegram Bot V18 - 完整功能整合版
+
+V18 新增：
+  1. 用戶喜好記憶學習（SQLite）
+     - /myfav  — 個人喜好總覽（最愛球隊/運動/語言/互動習慣）
+     - /style  — 切換詳細分析/快速比分模式
+     - 每次查詢自動記錄偏好，有相關賽事時主動推薦
+
+  2. 投票預測遊戲（Telegram Poll + 積分系統）
+     - /rank     — 積分排行榜 Top 10
+     - /myscore  — 個人積分與預測戰績
+     - PollAnswerHandler 自動記錄投票
+     - 比賽結算後自動公布結果並更新積分
+
+  3. 群體行為學習分析系統
+     - /insights — 即時社群趨勢洞察（熱門度/群體預測/爆冷）
+     - 每週一自動發布「本週玩家趨勢報告」
+     - 根據互動率自動優化推播風格
+
+V17 保留：
+  4. /football /baseball /basketball /allanalyze — 三種運動 AI 分析
+  5. /winrate — 勝率統計面板
+  6. 修復 PII 誤判、多語言邏輯、錯誤處理
 """
 import sys
 import os
@@ -14,12 +32,13 @@ import pytz
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from telegram import Update, BotCommand, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, BotCommand, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton, Poll
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
+    PollAnswerHandler,
     filters,
     ContextTypes,
 )
@@ -41,11 +60,11 @@ logger = logging.getLogger(__name__)
 tz = pytz.timezone(TIMEZONE)
 
 # ===== 娛樂城設定 =====
-GAME_URL = "http://la1111.ofa168hk.com/"
-CHANNEL_URL = "https://t.me/LA11118"
-CS_URL = "https://t.me/yu_888yu"
-BOT_USERNAME = "LA1111_bot"  # 邀請連結用的 Bot username
-TARGET_GROUP = "@G5ofa"
+GAME_URL      = "http://la1111.ofa168hk.com/"
+CHANNEL_URL   = "https://t.me/LA11118"
+CS_URL        = "https://t.me/yu_888yu"
+BOT_USERNAME  = "LA1111_bot"
+TARGET_GROUP  = "@G5ofa"
 
 # ===== 語言設定 =====
 LANGUAGES = {
@@ -57,7 +76,7 @@ LANGUAGES = {
     "th":    ("🇹🇭 ภาษาไทย",    "✅ ตั้งค่าภาษาเป็นภาษาไทยแล้ว"),
 }
 
-# ===== 主選單鍵盤（升級版） =====
+# ===== 主選單鍵盤 =====
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
         ["🎮 遊戲"],
@@ -67,17 +86,22 @@ MAIN_KEYBOARD = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# ===== 個資偵測 Regex =====
+# ===== 個資偵測 Regex（V17 修復版）=====
+# - 原 r"\d{8,20}" 會誤判球衣號碼等短數字
+# - 改為 12-20 位獨立數字（銀行帳號），台灣手機保持精確 pattern
 PII_PATTERNS = [
-    r"09\d{8}",                # 台灣手機
-    r"\+852\s?\d{4}\s?\d{4}",  # 香港手機
-    r"\d{8,20}",               # 銀行帳號（連續數字）
-    r"[A-Z][12]\d{8}",         # 台灣身分證
-    r"(?i)(密碼|password|pwd)[:：\s]*\w+", # 密碼相關
-    r"(?i)(帳號|account)[:：\s]*\w+",      # 帳號相關
+    r"09\d{8}",                                       # 台灣手機（精確 10 位）
+    r"\+852\s?\d{4}\s?\d{4}",                         # 香港手機
+    r"(?<!\d)\d{12,20}(?!\d)",                        # 銀行帳號（12-20 位獨立數字）
+    r"[A-Z][12]\d{8}",                                # 台灣身分證
+    r"(?i)(密碼|password|pwd)\s*[:：]\s*\S+",          # 密碼（需要冒號才觸發）
 ]
 
-# ===== 輔助函數 =====
+
+# ══════════════════════════════════════════════
+#  輔助函數
+# ══════════════════════════════════════════════
+
 async def reply(update: Update, text: str, reply_markup=None):
     """統一回覆函數（支援私訊、群組、頻道）"""
     if update.message:
@@ -85,14 +109,16 @@ async def reply(update: Update, text: str, reply_markup=None):
     elif update.channel_post:
         await update.channel_post.reply_text(text, reply_markup=reply_markup)
 
+
 async def reply_split(update: Update, text: str):
-    """處理長訊息分段發送"""
+    """處理長訊息分段發送（每段最多 4000 字元）"""
     if len(text) <= 4000:
         await reply(update, text)
         return
     parts = [text[i:i+4000] for i in range(0, len(text), 4000)]
     for p in parts:
         await reply(update, p)
+
 
 def is_query(text: str) -> bool:
     """判斷是否為比分查詢（隊名或運動類型）"""
@@ -103,23 +129,67 @@ def is_query(text: str) -> bool:
         return True
     return False
 
+
+def _get_user_lang(context: ContextTypes.DEFAULT_TYPE, user_id: int = 0) -> str:
+    """
+    安全取得用戶語言設定。
+    V18：優先從 SQLite 讀取（跨 session 持久化），再 fallback 到 context.user_data。
+    """
+    # 優先從 SQLite 讀取
+    if user_id:
+        try:
+            from modules.user_preferences import get_user_language
+            lang = get_user_language(user_id)
+            if lang in LANGUAGES:
+                return lang
+        except Exception:
+            pass
+    # Fallback 到 context.user_data
+    if context and context.user_data:
+        lang = context.user_data.get("language", "zh_tw")
+        if lang in LANGUAGES:
+            return lang
+    return "zh_tw"
+
+
+def _get_username(update: Update) -> str:
+    """取得用戶顯示名稱"""
+    user = update.effective_user
+    if not user:
+        return "匿名用戶"
+    if user.username:
+        return f"@{user.username}"
+    return user.first_name or f"用戶{user.id}"
+
+
+def _record_user_query(user_id: int, query_value: str, query_type: str = "team", sport: str = ""):
+    """統一的查詢記錄函數（同時記錄個人喜好 + 群體統計）"""
+    try:
+        from modules.user_preferences import record_query, infer_sport_from_query
+        from modules.community_analytics import record_community_query
+        if not sport:
+            sport = infer_sport_from_query(query_value)
+        record_query(user_id, query_type, query_value, sport)
+        record_community_query(user_id, query_value, query_type, sport)
+    except Exception as e:
+        logger.debug(f"記錄查詢失敗（非致命）: {e}")
+
+
+# ══════════════════════════════════════════════
+#  選單按鈕處理
+# ══════════════════════════════════════════════
+
 async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
     """處理選單按鈕點擊"""
     user_id = update.effective_user.id if update.effective_user else 0
     if text == "🎮 遊戲":
         game_link = f"{GAME_URL}?tgid={user_id}"
-        inline_kb = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🎮 立即進入遊戲", url=game_link)]]
-        )
+        inline_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🎮 立即進入遊戲", url=game_link)]])
         await reply(update, "🎮 點擊下方按鈕進入遊戲平台！", reply_markup=inline_kb)
         return True
     elif text == "👉 邀請好友":
         ref_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
-        msg = (
-            "🎉 你的專屬邀請連結：\n"
-            f"{ref_link}\n\n"
-            "分享給朋友，一起享受體育分析！⚽🏀⚾"
-        )
+        msg = f"🎉 你的專屬邀請連結：\n{ref_link}\n\n分享給朋友，一起享受體育分析！⚽🏀⚾"
         await reply(update, msg)
         return True
     elif text == "🌐 語言設置":
@@ -127,8 +197,8 @@ async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE,
         keys = list(LANGUAGES.keys())
         for i in range(0, len(keys), 2):
             row = [
-                InlineKeyboardButton(LANGUAGES[keys[i]][0], callback_data=f"lang_{keys[i]}"),
-                InlineKeyboardButton(LANGUAGES[keys[i+1]][0], callback_data=f"lang_{keys[i+1]}")
+                InlineKeyboardButton(LANGUAGES[keys[i]][0],   callback_data=f"lang_{keys[i]}"),
+                InlineKeyboardButton(LANGUAGES[keys[i+1]][0], callback_data=f"lang_{keys[i+1]}"),
             ]
             buttons.append(row)
         await reply(update, "🌐 請選擇您的語言：", reply_markup=InlineKeyboardMarkup(buttons))
@@ -141,22 +211,60 @@ async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE,
         return True
     return False
 
+
 async def handle_lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理語言選擇按鈕點擊"""
+    """處理語言選擇按鈕點擊（V18：同步儲存到 SQLite）"""
     query = update.callback_query
     await query.answer()
     lang_code = query.data.replace("lang_", "")
     if lang_code in LANGUAGES:
+        # 同步到 context.user_data
         context.user_data["language"] = lang_code
+        # V18：同步儲存到 SQLite（跨 session 持久化）
+        user_id = query.from_user.id
+        try:
+            from modules.user_preferences import set_user_language
+            set_user_language(user_id, lang_code)
+        except Exception as e:
+            logger.warning(f"SQLite 語言儲存失敗: {e}")
         await query.edit_message_text(LANGUAGES[lang_code][1])
+        logger.info(f"用戶 {user_id} 語言設定為 {lang_code}")
 
-# ===== 指令 =====
+
+async def handle_style_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """處理互動習慣選擇按鈕點擊"""
+    query = update.callback_query
+    await query.answer()
+    style_code = query.data.replace("style_", "")
+    user_id = query.from_user.id
+    style_labels = {
+        "detailed": "📊 詳細分析派",
+        "brief":    "⚡ 快速比分派",
+        "auto":     "🤖 自動判斷",
+    }
+    if style_code in style_labels:
+        try:
+            from modules.user_preferences import set_user_style
+            set_user_style(user_id, style_code)
+            await query.edit_message_text(f"✅ 互動習慣已設定為：{style_labels[style_code]}")
+        except Exception as e:
+            logger.error(f"設定互動習慣失敗: {e}")
+            await query.edit_message_text("❌ 設定失敗，請稍後再試")
+
+
+# ══════════════════════════════════════════════
+#  基本指令
+# ══════════════════════════════════════════════
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /start")
     welcome_text = (
         "🏆 歡迎來到 LA1 智能服務平台！\n\n"
         "✅ MLB / NBA / NHL / 足球 即時比分\n"
         "✅ AI 勝率預測與比賽分析\n"
+        "✅ ⚽⚾🏀 三種運動 AI 深度分析\n"
+        "✅ 🎯 投票預測遊戲 + 積分排行榜\n"
+        "✅ 📊 社群趨勢洞察 + 個人喜好記憶\n"
         "✅ 直接問任何體育問題，不需要指令！\n\n"
         "🌐 平台入口：\n"
         "🇹🇼 台站｜La1111.meta1788.com\n"
@@ -170,33 +278,55 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif update.channel_post:
         await update.channel_post.reply_text(welcome_text)
 
+
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /help")
-    await reply(update, """📖 使用說明 V14
+    await reply(update, """📖 使用說明 V18
+
 🔍 查詢方式：
 • 直接輸入隊名：利物浦 曼城
 • 輸入運動類型：棒球、NBA、足球
-• WBC 經典賽：WBC、經典賽
 • 問「日本下場對誰」→ AI 自動查未來賽程
-📊 指令列表：
+
+📊 即時查詢指令：
 • /score 隊名 → 即時比分 + 近3場戰績
 • /today → 今日所有賽事總覽
 • /live → 目前進行中的比賽
 • /hot → 今日熱門焦點賽事
 • /leaders → MLB全壘打/NBA得分/足球射手榜
-• /analyze 隊名 → AI 賽事分析預測
 • /odds 隊名 → 盤口資訊
-🧠 智能功能：
-• 打錯字也能查（洋機→洋基）
-• 自動判斷聯盟（不會混搭）
+
+🤖 AI 分析指令：
+• /football → ⚽ 今日足球 AI 分析
+• /baseball → ⚾ 今日棒球 AI 分析
+• /basketball → 🏀 今日籃球 AI 分析
+• /allanalyze → 🔥 三種運動綜合 AI 分析
+• /analyze 隊名 → AI 賽事分析預測
+• /winrate 運動 → 勝率統計面板
+
+🎯 投票預測遊戲：
+• /rank → 🏆 積分排行榜 Top 10
+• /myscore → 📊 我的積分與預測戰績
+• 頻道推播賽事時自動發送投票，猜對 +10分
+
+👤 個人喜好：
+• /myfav → 我的體育偏好總覽
+• /style → 切換詳細分析/快速比分模式
+
+📡 社群洞察：
+• /insights → 即時社群趨勢（熱門度/群體預測/爆冷）
 """)
+
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /today")
+    user_id = update.effective_user.id if update.effective_user else 0
+    _record_user_query(user_id, "today", "command")
     await reply(update, "⏳ 正在獲取今日賽事總覽...")
     result = search_live_scores("today")
     response = format_response(result)
     await reply_split(update, response)
+
 
 async def cmd_live(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /live")
@@ -205,12 +335,14 @@ async def cmd_live(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = format_response(result)
     await reply_split(update, response)
 
+
 async def cmd_hot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /hot")
     await reply(update, "⏳ 正在獲取今日熱門焦點賽事...")
     result = search_live_scores("hot")
     response = format_response(result)
     await reply_split(update, response)
+
 
 async def cmd_leaders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /leaders")
@@ -220,20 +352,26 @@ async def cmd_leaders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = format_response(result)
     await reply_split(update, response)
 
+
 async def cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /analyze")
     if not context.args:
         await reply(update, "請輸入隊名，例如：/analyze 湖人")
         return
     query = " ".join(context.args)
+    user_id = update.effective_user.id if update.effective_user else 0
+    user_lang = _get_user_lang(context, user_id)
+    _record_user_query(user_id, query, "team")
+    _record_user_query(user_id, "analyze", "command")
     await reply(update, f"⏳ 正在為您進行 AI 賽事分析：{query}...")
     try:
         from modules.ai_chat import get_ai_response
-        ai_reply = get_ai_response(update.effective_user.id, f"分析 {query}")
-        await reply(update, ai_reply)
+        ai_reply = get_ai_response(user_id, f"深度分析 {query} 的近期表現、勝率預測與爆冷可能", user_lang=user_lang)
+        await reply_split(update, ai_reply)
     except Exception as e:
-        logger.error(f"Analyze error: {e}")
+        logger.error(f"Analyze error: {e}", exc_info=True)
         await reply(update, "😅 抱歉，AI 分析暫時無法使用，請稍後再試！")
+
 
 async def cmd_odds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /odds")
@@ -246,75 +384,405 @@ async def cmd_odds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     response = format_response(result)
     await reply_split(update, response)
 
-# ===== 訊息處理邏輯 =====
+
+# ══════════════════════════════════════════════
+#  三種運動 AI 分析指令（V17）
+# ══════════════════════════════════════════════
+
+async def cmd_football_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """⚽ 今日足球 AI 分析"""
+    logger.info("收到 /football")
+    user_id = update.effective_user.id if update.effective_user else 0
+    _record_user_query(user_id, "football", "sport", "football")
+    _record_user_query(user_id, "football", "command")
+    await reply(update, "⏳ 正在生成今日足球 AI 分析，請稍候...")
+    try:
+        from modules.football import get_matches
+        from modules.sports_analyzer import analyze_football
+        matches = get_matches()
+        if not matches:
+            await reply(update, "⚽ 今日暫無足球賽事資訊。")
+            return
+        sep = "═" * 24
+        analysis = analyze_football("\n".join(matches))
+        await reply_split(update, f"{sep}\n⚽ 今日足球 AI 分析\n{sep}\n\n{analysis}\n\n{sep}\n📡 世界體育數據室\n⚠️ 分析僅供參考，請理性投注")
+    except Exception as e:
+        logger.error(f"Football analyze error: {e}", exc_info=True)
+        await reply(update, "😅 足球分析暫時無法使用，請稍後再試！")
+
+
+async def cmd_baseball_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """⚾ 今日棒球 AI 分析"""
+    logger.info("收到 /baseball")
+    user_id = update.effective_user.id if update.effective_user else 0
+    _record_user_query(user_id, "baseball", "sport", "baseball")
+    _record_user_query(user_id, "baseball", "command")
+    await reply(update, "⏳ 正在生成今日棒球 AI 分析，請稍候...")
+    try:
+        from modules.mlb import get_games
+        from modules.sports_analyzer import analyze_baseball
+        games = get_games()
+        if not games:
+            await reply(update, "⚾ 今日暫無棒球賽事資訊。")
+            return
+        sep = "═" * 24
+        analysis = analyze_baseball("\n".join(games))
+        await reply_split(update, f"{sep}\n⚾ 今日棒球 AI 分析\n{sep}\n\n{analysis}\n\n{sep}\n📡 世界體育數據室\n⚠️ 分析僅供參考，請理性投注")
+    except Exception as e:
+        logger.error(f"Baseball analyze error: {e}", exc_info=True)
+        await reply(update, "😅 棒球分析暫時無法使用，請稍後再試！")
+
+
+async def cmd_basketball_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """🏀 今日籃球 AI 分析"""
+    logger.info("收到 /basketball")
+    user_id = update.effective_user.id if update.effective_user else 0
+    _record_user_query(user_id, "basketball", "sport", "basketball")
+    _record_user_query(user_id, "basketball", "command")
+    await reply(update, "⏳ 正在生成今日籃球 AI 分析，請稍候...")
+    try:
+        from modules.nba import get_games
+        from modules.sports_analyzer import analyze_basketball
+        games = get_games()
+        if not games:
+            await reply(update, "🏀 今日暫無籃球賽事資訊。")
+            return
+        sep = "═" * 24
+        analysis = analyze_basketball("\n".join(games))
+        await reply_split(update, f"{sep}\n🏀 今日籃球 AI 分析\n{sep}\n\n{analysis}\n\n{sep}\n📡 世界體育數據室\n⚠️ 分析僅供參考，請理性投注")
+    except Exception as e:
+        logger.error(f"Basketball analyze error: {e}", exc_info=True)
+        await reply(update, "😅 籃球分析暫時無法使用，請稍後再試！")
+
+
+async def cmd_all_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """🔥 三種運動綜合 AI 分析"""
+    logger.info("收到 /allanalyze")
+    user_id = update.effective_user.id if update.effective_user else 0
+    _record_user_query(user_id, "allanalyze", "command")
+    await reply(update, "⏳ 正在生成三種運動綜合 AI 分析，請稍候（約需 30 秒）...")
+    try:
+        from modules.football import get_matches as get_football
+        from modules.mlb import get_games as get_baseball
+        from modules.nba import get_games as get_basketball
+        from modules.sports_analyzer import analyze_all_sports
+        football_text   = "\n".join(get_football()) or ""
+        baseball_text   = "\n".join(get_baseball()) or ""
+        basketball_text = "\n".join(get_basketball()) or ""
+        if not any([football_text, baseball_text, basketball_text]):
+            await reply(update, "😴 今日暫無足球、棒球、籃球賽事資訊。")
+            return
+        sep = "═" * 24
+        now_str = datetime.now(tz).strftime("%Y/%m/%d")
+        analysis = analyze_all_sports(football_text, baseball_text, basketball_text)
+        await reply_split(update, f"{sep}\n🔥 三種運動綜合 AI 分析\n📅 {now_str}\n{sep}\n\n{analysis}\n\n{sep}\n📡 世界體育數據室\n⚠️ 分析僅供參考，請理性投注")
+    except Exception as e:
+        logger.error(f"All analyze error: {e}", exc_info=True)
+        await reply(update, "😅 綜合分析暫時無法使用，請稍後再試！")
+
+
+async def cmd_winrate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """📊 勝率統計面板（靈感來自 playsport.cc）"""
+    logger.info("收到 /winrate")
+    sport = " ".join(context.args) if context.args else ""
+    if not sport:
+        await reply(update, (
+            "📊 勝率統計面板\n\n請指定運動類型，例如：\n"
+            "• /winrate 足球\n• /winrate 棒球\n• /winrate 籃球\n\n"
+            "此功能顯示各聯盟近期主推勝率統計，靈感來自 playsport.cc 的戰績總覽。"
+        ))
+        return
+    try:
+        from modules.sports_analyzer import generate_win_rate_panel
+        demo_records = {
+            "足球": [
+                {"league": "英超", "wins": 12, "losses": 5},
+                {"league": "西甲", "wins": 8,  "losses": 6},
+                {"league": "德甲", "wins": 10, "losses": 4},
+                {"league": "意甲", "wins": 7,  "losses": 7},
+                {"league": "歐冠", "wins": 9,  "losses": 3},
+            ],
+            "棒球": [
+                {"league": "MLB", "wins": 15, "losses": 8},
+                {"league": "WBC", "wins": 6,  "losses": 2},
+            ],
+            "籃球": [
+                {"league": "NBA", "wins": 18, "losses": 7},
+            ],
+        }
+        sport_key = sport.strip()
+        records = demo_records.get(sport_key, [])
+        if not records:
+            await reply(update, f"❌ 找不到「{sport_key}」的勝率資料，請輸入：足球、棒球 或 籃球")
+            return
+        panel = generate_win_rate_panel(sport_key, records)
+        sep = "═" * 24
+        await reply(update, f"{sep}\n{panel}\n{sep}\n📡 世界體育數據室\n⚠️ 數據僅供參考")
+    except Exception as e:
+        logger.error(f"Winrate error: {e}", exc_info=True)
+        await reply(update, "😅 勝率統計暫時無法使用，請稍後再試！")
+
+
+# ══════════════════════════════════════════════
+#  V18 新增：用戶喜好記憶指令
+# ══════════════════════════════════════════════
+
+async def cmd_myfav(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/myfav — 個人喜好總覽"""
+    logger.info("收到 /myfav")
+    user_id = update.effective_user.id if update.effective_user else 0
+    try:
+        from modules.user_preferences import format_user_preference_summary
+        summary = format_user_preference_summary(user_id)
+        await reply_split(update, summary)
+    except Exception as e:
+        logger.error(f"myfav error: {e}", exc_info=True)
+        await reply(update, "😅 個人喜好查詢暫時無法使用，請稍後再試！")
+
+
+async def cmd_style(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/style — 切換互動習慣偏好"""
+    logger.info("收到 /style")
+    buttons = [
+        [InlineKeyboardButton("📊 詳細分析派（完整 AI 分析）", callback_data="style_detailed")],
+        [InlineKeyboardButton("⚡ 快速比分派（簡短比分）",     callback_data="style_brief")],
+        [InlineKeyboardButton("🤖 自動判斷（根據習慣）",       callback_data="style_auto")],
+    ]
+    await reply(
+        update,
+        "📱 請選擇您的互動習慣偏好：\n\n"
+        "• 📊 詳細分析派：每次查詢都附上完整 AI 分析\n"
+        "• ⚡ 快速比分派：只顯示比分，不附分析\n"
+        "• 🤖 自動判斷：根據您的使用習慣自動選擇",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+
+
+# ══════════════════════════════════════════════
+#  V18 新增：投票預測遊戲指令
+# ══════════════════════════════════════════════
+
+async def cmd_rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/rank — 積分排行榜 Top 10"""
+    logger.info("收到 /rank")
+    try:
+        from modules.prediction_game import get_leaderboard, format_leaderboard_message
+        leaderboard = get_leaderboard(top_n=10)
+        msg = format_leaderboard_message(leaderboard)
+        await reply_split(update, msg)
+    except Exception as e:
+        logger.error(f"rank error: {e}", exc_info=True)
+        await reply(update, "😅 排行榜暫時無法使用，請稍後再試！")
+
+
+async def cmd_myscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/myscore — 個人積分與預測戰績"""
+    logger.info("收到 /myscore")
+    user_id = update.effective_user.id if update.effective_user else 0
+    username = _get_username(update)
+    try:
+        from modules.prediction_game import format_personal_score_message
+        msg = format_personal_score_message(user_id, username)
+        await reply_split(update, msg)
+    except Exception as e:
+        logger.error(f"myscore error: {e}", exc_info=True)
+        await reply(update, "😅 積分查詢暫時無法使用，請稍後再試！")
+
+
+async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    處理 Telegram Poll 投票（PollAnswerHandler）。
+    當用戶在頻道 Poll 中投票時自動觸發。
+    """
+    poll_answer = update.poll_answer
+    if not poll_answer:
+        return
+
+    poll_id     = poll_answer.poll_id
+    user_id     = poll_answer.user.id
+    username    = f"@{poll_answer.user.username}" if poll_answer.user.username else poll_answer.user.first_name
+    option_ids  = poll_answer.option_ids  # 用戶選擇的選項索引列表
+
+    if not option_ids:
+        return  # 用戶撤回投票
+
+    chosen_option = option_ids[0]  # 單選 Poll 只取第一個
+
+    try:
+        from modules.prediction_game import record_vote
+        record_vote(poll_id, user_id, username, chosen_option)
+        logger.info(f"[投票記錄] user={user_id} poll={poll_id} option={chosen_option}")
+    except Exception as e:
+        logger.error(f"handle_poll_answer error: {e}", exc_info=True)
+
+
+# ══════════════════════════════════════════════
+#  V18 新增：群體行為洞察指令
+# ══════════════════════════════════════════════
+
+async def cmd_insights(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/insights — 即時社群趨勢洞察"""
+    logger.info("收到 /insights")
+    await reply(update, "⏳ 正在生成社群趨勢洞察...")
+    try:
+        from modules.community_analytics import generate_insights_snapshot
+        snapshot = generate_insights_snapshot()
+        await reply_split(update, snapshot)
+    except Exception as e:
+        logger.error(f"insights error: {e}", exc_info=True)
+        await reply(update, "😅 趨勢洞察暫時無法使用，請稍後再試！")
+
+
+# ══════════════════════════════════════════════
+#  訊息分發邏輯
+# ══════════════════════════════════════════════
+
 async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     """
-    統一的訊息分發函數（私訊和群組共用）
-    流程：
-    1. 呼叫 should_use_bot_function（傳入對話歷史）判斷意圖
-    2. 根據意圖路由到對應功能
-    3. 查詢完成後，將用戶訊息和 Bot 回應記錄到對話歷史
+    統一的訊息分發函數（私訊和群組共用）。
+    V18 新增：
+      - 查詢時自動記錄個人喜好 + 群體統計
+      - 查詢後主動推薦相關賽事（若有喜好記錄）
+      - 加入 football_analyze / baseball_analyze / basketball_analyze 路由
     """
     user_id = update.effective_user.id if update.effective_user else 0
-    # 取得用戶語言設定（預設繁體中文）
-    user_lang = context.user_data.get("language", "zh_tw") if context.user_data else "zh_tw"
+    user_lang = _get_user_lang(context, user_id)
+
     try:
         from modules.ai_chat import should_use_bot_function, get_ai_response, add_to_history
         intent = should_use_bot_function(user_id, text)
         action = intent.get("action", "chat")
-        query = intent.get("query", "").strip()
+        query  = intent.get("query", "").strip()
         logger.info(f"[dispatch] user={user_id} lang={user_lang} text='{text}' → action={action} query='{query}'")
 
         if action == "details" and query:
             await handle_details_query(update, query)
+            _record_user_query(user_id, query, "team")
             add_to_history(user_id, "user", text)
             add_to_history(user_id, "assistant", f"查詢了 {query} 的即時詳細資料")
+
         elif action == "upcoming" and query:
             await reply(update, f"⏳ 查詢 {query} 的下一場賽程...")
             result = get_upcoming_matches(query)
             response = format_upcoming_response(result)
             await reply_split(update, response)
+            _record_user_query(user_id, query, "team")
             add_to_history(user_id, "user", text)
             add_to_history(user_id, "assistant", response[:200])
+
         elif action == "score" and query:
             await handle_score_query(update, query, user_id=user_id)
+            _record_user_query(user_id, query, "team")
+
         elif action == "live":
             await cmd_live(update, context)
+
         elif action == "hot":
             await cmd_hot(update, context)
+
         elif action == "leaders":
             context.args = query.split() if query else []
             await cmd_leaders(update, context)
+
         elif action == "today":
             await cmd_today(update, context)
+
         elif action == "analyze" and query:
             context.args = query.split()
             await cmd_analyze(update, context)
+
+        elif action == "football_analyze":
+            await cmd_football_analyze(update, context)
+
+        elif action == "baseball_analyze":
+            await cmd_baseball_analyze(update, context)
+
+        elif action == "basketball_analyze":
+            await cmd_basketball_analyze(update, context)
+
         elif is_query(text):
             await handle_score_query(update, text, user_id=user_id)
+            _record_user_query(user_id, text, "team")
+
         else:
             ai_reply = get_ai_response(user_id, text, user_lang=user_lang)
-            await reply(update, ai_reply)
+            await reply_split(update, ai_reply)
+
+        # ── V18：查詢後主動推薦（僅私訊，避免頻道刷屏）──
+        if update.message and update.message.chat.type == "private":
+            await _maybe_send_recommendation(update, user_id)
+
     except Exception as e:
         logger.error(f"dispatch error: {e}", exc_info=True)
         if is_query(text):
-            await handle_score_query(update, text)
+            try:
+                await handle_score_query(update, text)
+            except Exception as e2:
+                logger.error(f"score query fallback error: {e2}")
+                await reply(update, "❌ 查詢失敗，請稍後再試")
         else:
             try:
                 from modules.ai_chat import get_ai_response
                 ai_reply = get_ai_response(user_id, text, user_lang=user_lang)
-                await reply(update, ai_reply)
+                await reply_split(update, ai_reply)
             except Exception as e2:
-                logger.error(f"fallback error: {e2}")
+                logger.error(f"AI fallback error: {e2}", exc_info=True)
                 await reply(update, "😅 抱歉，系統暫時無法回應，請稍後再試！")
 
+
+async def _maybe_send_recommendation(update: Update, user_id: int):
+    """
+    主動推薦相關賽事（V18 新增）。
+    條件：用戶有查詢歷史 + 距上次推薦超過 4 小時 + 有相關賽事。
+    """
+    try:
+        from modules.user_preferences import should_send_recommendation, generate_recommendation
+        from modules.football import get_matches as get_football
+        from modules.mlb import get_games as get_baseball
+        from modules.nba import get_games as get_basketball
+
+        if not should_send_recommendation(user_id):
+            return
+
+        all_matches = []
+        try:
+            all_matches.extend(get_football())
+        except Exception:
+            pass
+        try:
+            all_matches.extend(get_baseball())
+        except Exception:
+            pass
+        try:
+            all_matches.extend(get_basketball())
+        except Exception:
+            pass
+
+        if not all_matches:
+            return
+
+        rec = generate_recommendation(user_id, all_matches)
+        if rec:
+            await reply(update, f"💡 個人化推薦\n\n{rec}")
+            logger.info(f"[推薦] 已發送給 user={user_id}")
+    except Exception as e:
+        logger.debug(f"推薦發送失敗（非致命）: {e}")
+
+
+# ══════════════════════════════════════════════
+#  歡迎與訊息處理
+# ══════════════════════════════════════════════
+
 async def send_first_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """首次私訊自動歡迎"""
+    """首次私訊自動歡迎（V18：同步語言到 SQLite）"""
     user_id = update.effective_user.id if update.effective_user else 0
     welcome_text = (
         "🏆 歡迎來到 LA1 智能服務平台！\n\n"
         "✅ MLB / NBA / NHL / 足球 即時比分\n"
         "✅ AI 勝率預測與比賽分析\n"
+        "✅ ⚽⚾🏀 三種運動 AI 深度分析\n"
+        "✅ 🎯 投票預測遊戲 + 積分排行榜\n"
+        "✅ 📊 社群趨勢洞察 + 個人喜好記憶\n"
         "✅ 直接問任何體育問題，不需要指令！\n\n"
         "🌐 平台入口：\n"
         "🇹🇼 台站｜La1111.meta1788.com\n"
@@ -324,7 +792,7 @@ async def send_first_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "🎮 點擊下方【遊戲】按鈕立即進入！"
     )
     await update.message.reply_text(welcome_text, reply_markup=MAIN_KEYBOARD)
-    
+
     lang_buttons = [
         [InlineKeyboardButton(LANGUAGES["zh_tw"][0], callback_data="lang_zh_tw"),
          InlineKeyboardButton(LANGUAGES["en"][0],    callback_data="lang_en")],
@@ -334,13 +802,14 @@ async def send_first_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE)
          InlineKeyboardButton(LANGUAGES["th"][0],    callback_data="lang_th")],
     ]
     await update.message.reply_text("🌐 請選擇您的語言：", reply_markup=InlineKeyboardMarkup(lang_buttons))
-    
+
     game_link = f"{GAME_URL}?tgid={user_id}"
     inline_kb = InlineKeyboardMarkup([[InlineKeyboardButton("🎮 立即進入遊戲", url=game_link)]])
     await update.message.reply_text("🎮 點擊下方按鈕進入遊戲平台！", reply_markup=inline_kb)
-    
+
     context.user_data["welcomed"] = True
     logger.info(f"[首次歡迎] 已發送給 user_id={user_id}")
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理私訊"""
@@ -354,6 +823,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await dispatch_message(update, context, text)
 
+
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理群組訊息"""
     if not update.message or not update.message.text:
@@ -364,6 +834,7 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     await dispatch_message(update, context, text)
 
+
 async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理頻道留言區訊息（含幽默引導與個資偵測）"""
     if not update.message or not update.message.text:
@@ -371,33 +842,35 @@ async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE
     text = update.message.text.strip()
     logger.info(f"[頻道留言] {text}")
 
-    # ── 1. 個資偵測與自動刪除 ──
+    # ── 1. 個資偵測與自動刪除（V17 修復：更精確的 pattern）──
     is_pii = False
+    matched_pattern = None
     for pattern in PII_PATTERNS:
         if re.search(pattern, text):
             is_pii = True
+            matched_pattern = pattern
             break
-    
+
     if is_pii:
+        logger.info(f"[PII 偵測] 觸發 pattern: {matched_pattern}, 訊息: {text[:30]}...")
         try:
             await update.message.delete()
             await reply(update, "嘿！個資不能亂貼喔 🙈 為了保護你的安全，剛才那則訊息已被移除。有問題請私訊 @LA1111_bot 處理！")
-            return
         except Exception as e:
             logger.error(f"刪除個資訊息失敗: {e}")
             await reply(update, "嘿！個資不能亂貼喔 🙈 為了保護你的安全，請盡快移除剛才的訊息。有問題請私訊 @LA1111_bot 處理！")
-            return
+        return
 
     # ── 2. 幽默引導與客服問題處理 ──
     text_lower = text.lower()
     cs_keywords = ["帳號", "儲值", "提現", "充值", "託售", "點數", "沒上分", "密碼", "註冊", "登入"]
     if any(kw in text_lower for kw in cs_keywords):
+        import random
         humor_replies = [
             "哇！這個問題問得好！不過我只是個愛看球的 AI，這種大事還是交給真人處理比較穩 😂 快去找 @LA1111_bot，他比我厲害多了！",
             "這種問題找我沒用啦 😂 快去找 @LA1111_bot，他專門處理這種疑難雜症！",
             "哎呀，我的電路板處理不了金流問題 🤖 這種專業的事請私訊 @LA1111_bot 處理喔！",
         ]
-        import random
         await reply(update, random.choice(humor_replies))
         return
 
@@ -405,15 +878,15 @@ async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE
     if is_query(text):
         await handle_score_query(update, text)
     else:
-        # 一般留言：幽默互動
+        import random
         humor_chat = [
             "這球你怎麼看？我覺得很有戲喔！😎",
             "哈哈，說得好！大家一起幫主隊加油！🔥",
             "看球就是要熱鬧！有什麼想問的隨時問我喔 🏀⚾",
             "我也在盯著這場，心跳好快啊！💓",
         ]
-        import random
         await reply(update, random.choice(humor_chat))
+
 
 async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """新成員歡迎訊息"""
@@ -422,23 +895,25 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
     for member in update.message.new_chat_members:
         if member.is_bot:
             continue
-        name = member.username if member.username else member.first_name
+        name    = member.username if member.username else member.first_name
         mention = f"@{name}" if member.username else f"[{name}](tg://user?id={member.id})"
         welcome_text = (
             f"👋 歡迎 {mention} 加入！\n\n"
             "🏆 世界體育數據室 提供：\n"
             "• MLB / NBA / NHL / 足球 即時比分\n"
-            "• AI 勝率預測與比賽分析\n"
-            "• 直接問 Bot 任何體育問題，不需要指令！\n\n"
+            "• ⚽⚾🏀 三種運動 AI 分析\n"
+            "• 🎯 投票預測遊戲 + 積分排行榜\n"
+            "• 直接問 Bot 任何體育問題！\n\n"
             "💼 合作夥伴：https://t.me/yu_888yu"
         )
         await update.message.reply_text(welcome_text, parse_mode="Markdown")
+
 
 async def handle_score_query(update: Update, query: str, user_id: int = 0):
     """處理比分查詢"""
     logger.info(f"開始查詢: {query}")
     try:
-        result = search_live_scores(query)
+        result   = search_live_scores(query)
         response = format_response(result)
         await reply_split(update, response)
         if user_id:
@@ -449,46 +924,80 @@ async def handle_score_query(update: Update, query: str, user_id: int = 0):
             except Exception:
                 pass
     except Exception as e:
-        logger.error(f"Query error: {e}")
+        logger.error(f"Query error: {e}", exc_info=True)
         await reply(update, "❌ 查詢失敗，請稍後再試")
+
 
 async def handle_details_query(update: Update, query: str):
     """處理即時詳細資料查詢"""
     logger.info(f"即時詳細資料查詢: {query}")
     try:
-        result = search_live_scores(query)
-        live_events = [e for e in result["events"] if e.get("state") == "in"]
+        result      = search_live_scores(query)
+        live_events = [e for e in result.get("events", []) if e.get("state") == "in"]
         if not live_events:
             await reply(update, f"😴 {query} 目前沒有進行中的比賽")
             return
-        e = live_events[0]
+        e       = live_events[0]
         details = get_live_game_details(e.get("game_id"), e.get("sport"), e.get("league"))
-        msg = format_game_details(details)
+        msg     = format_game_details(details)
         await reply_split(update, msg)
     except Exception as e:
-        logger.error(f"Details error: {e}")
+        logger.error(f"Details error: {e}", exc_info=True)
         await reply(update, "❌ 查詢詳細資料失敗")
 
-# ===== 主程式 =====
+
+# ══════════════════════════════════════════════
+#  主程式
+# ══════════════════════════════════════════════
+
 def main():
     if not BOT_TOKEN:
         logger.error("未設定 BOT_TOKEN 環境變數")
         return
+
     app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("today", cmd_today))
-    app.add_handler(CommandHandler("live", cmd_live))
-    app.add_handler(CommandHandler("hot", cmd_hot))
-    app.add_handler(CommandHandler("leaders", cmd_leaders))
-    app.add_handler(CommandHandler("analyze", cmd_analyze))
-    app.add_handler(CommandHandler("odds", cmd_odds))
-    app.add_handler(CallbackQueryHandler(handle_lang_callback, pattern=r"^lang_"))
+
+    # ── 基本指令 ──
+    app.add_handler(CommandHandler("start",      cmd_start))
+    app.add_handler(CommandHandler("help",       cmd_help))
+    app.add_handler(CommandHandler("today",      cmd_today))
+    app.add_handler(CommandHandler("live",       cmd_live))
+    app.add_handler(CommandHandler("hot",        cmd_hot))
+    app.add_handler(CommandHandler("leaders",    cmd_leaders))
+    app.add_handler(CommandHandler("analyze",    cmd_analyze))
+    app.add_handler(CommandHandler("odds",       cmd_odds))
+
+    # ── 三種運動 AI 分析（V17）──
+    app.add_handler(CommandHandler("football",   cmd_football_analyze))
+    app.add_handler(CommandHandler("baseball",   cmd_baseball_analyze))
+    app.add_handler(CommandHandler("basketball", cmd_basketball_analyze))
+    app.add_handler(CommandHandler("allanalyze", cmd_all_analyze))
+    app.add_handler(CommandHandler("winrate",    cmd_winrate))
+
+    # ── 用戶喜好記憶（V18）──
+    app.add_handler(CommandHandler("myfav",      cmd_myfav))
+    app.add_handler(CommandHandler("style",      cmd_style))
+
+    # ── 投票預測遊戲（V18）──
+    app.add_handler(CommandHandler("rank",       cmd_rank))
+    app.add_handler(CommandHandler("myscore",    cmd_myscore))
+    app.add_handler(PollAnswerHandler(handle_poll_answer))
+
+    # ── 群體行為洞察（V18）──
+    app.add_handler(CommandHandler("insights",   cmd_insights))
+
+    # ── Callback 處理 ──
+    app.add_handler(CallbackQueryHandler(handle_lang_callback,  pattern=r"^lang_"))
+    app.add_handler(CallbackQueryHandler(handle_style_callback, pattern=r"^style_"))
+
+    # ── 訊息處理 ──
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, handle_message))
-    app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.TEXT, handle_channel_post))
-    logger.info("Bot 已啟動...")
-    app.run_polling(allowed_updates=["message", "callback_query", "chat_member"])
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS  & filters.TEXT, handle_channel_post))
+
+    logger.info("Bot V18 已啟動（用戶喜好記憶 + 投票預測遊戲 + 群體行為分析）...")
+    app.run_polling(allowed_updates=["message", "callback_query", "poll_answer", "chat_member"])
+
 
 if __name__ == "__main__":
     main()

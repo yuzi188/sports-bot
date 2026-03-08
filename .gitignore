@@ -3,3 +3,11 @@ __pycache__/
 *.pyo
 .env
 *.log
+
+# SQLite 資料庫（用戶數據，不儲入版控）
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# 但保留 data/ 目錄結構
+!data/.gitkeep

@@ -217,3 +217,90 @@ def select_focus_matches(events_by_league: dict, max_matches: int = 5) -> list:
             })
     all_matches.sort(key=lambda x: x["priority"])
     return all_matches[:max_matches]
+
+
+# ══════════════════════════════════════════════
+#  V17 新增：三種運動 AI 分析格式化函數
+#  靈感來源：playsport.cc 的賽事分析呈現方式
+# ══════════════════════════════════════════════
+
+def format_football_analysis_message(analysis: str) -> str:
+    """格式化足球 AI 分析訊息"""
+    sep = "═" * 24
+    lines = [
+        sep,
+        "⚽ 今日足球 AI 分析",
+        format_date_header(),
+        sep,
+        "",
+        analysis,
+        "",
+        sep,
+        "📡 世界體育數據室",
+        "⚠️ 分析僅供參考，請理性投注",
+    ]
+    return "\n".join(lines)
+
+
+def format_baseball_analysis_message(analysis: str) -> str:
+    """格式化棒球 AI 分析訊息"""
+    sep = "═" * 24
+    lines = [
+        sep,
+        "⚾ 今日棒球 AI 分析",
+        format_date_header(),
+        sep,
+        "",
+        analysis,
+        "",
+        sep,
+        "📡 世界體育數據室",
+        "⚠️ 分析僅供參考，請理性投注",
+    ]
+    return "\n".join(lines)
+
+
+def format_basketball_analysis_message(analysis: str) -> str:
+    """格式化籃球 AI 分析訊息"""
+    sep = "═" * 24
+    lines = [
+        sep,
+        "🏀 今日籃球 AI 分析",
+        format_date_header(),
+        sep,
+        "",
+        analysis,
+        "",
+        sep,
+        "📡 世界體育數據室",
+        "⚠️ 分析僅供參考，請理性投注",
+    ]
+    return "\n".join(lines)
+
+
+def format_all_sports_analysis_message(football_analysis: str, baseball_analysis: str, basketball_analysis: str) -> str:
+    """
+    格式化三種運動綜合 AI 分析訊息
+    靈感來自 playsport.cc 的多聯盟戰績總覽頁面
+    """
+    sep = "═" * 24
+    dash = "─" * 20
+    lines = [
+        sep,
+        "🔥 三種運動綜合 AI 分析",
+        format_date_header(),
+        sep,
+        "",
+    ]
+    if football_analysis:
+        lines += ["⚽ 足球分析", dash, football_analysis, ""]
+    if baseball_analysis:
+        lines += ["⚾ 棒球分析", dash, baseball_analysis, ""]
+    if basketball_analysis:
+        lines += ["🏀 籃球分析", dash, basketball_analysis, ""]
+    lines += [
+        sep,
+        "📡 世界體育數據室",
+        "⚠️ 分析僅供參考，請理性投注",
+    ]
+    return "\n".join(lines)
