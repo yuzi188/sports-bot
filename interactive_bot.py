@@ -1,5 +1,5 @@
 """
-互動式 Telegram Bot V5.3 - 全功能智能體育查詢 + AI 客服聊天
+互動式 Telegram Bot V5.2 - 全功能智能體育查詢
 全部使用免費 API（ESPN + OpenAI 已有 key）
 """
 
@@ -88,32 +88,11 @@ async def reply_split(update: Update, text: str):
         await reply(update, text)
 
 
-# ===== AI 客服聊天 =====
-
-async def handle_ai_chat(update: Update, text: str):
-    """當訊息不是比分查詢時，交由 AI 客服回應"""
-    try:
-        from modules.ai_chat import get_ai_response
-
-        # 取得用戶 ID（私訊用 user.id，群組也用 user.id）
-        user_id = 0
-        if update.message and update.message.from_user:
-            user_id = update.message.from_user.id
-
-        logger.info(f"[AI 客服] 用戶 {user_id}: {text}")
-        ai_reply = get_ai_response(user_id, text)
-        await reply(update, ai_reply)
-
-    except Exception as e:
-        logger.error(f"AI 客服錯誤: {e}", exc_info=True)
-        await reply(update, "😅 抱歉，AI 助理暫時無法回應，請稍後再試！\n\n💡 你可以直接輸入隊名查詢比分，例如：洋基、NBA、英超")
-
-
 # ===== 指令 =====
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /start")
-    await reply(update, """🏟 歡迎來到【世界體育數據室】V5.3
+    await reply(update, """🏟 歡迎來到【世界體育數據室】V5.2
 
 直接輸入隊名或運動類型即可查詢。
 
@@ -131,13 +110,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • /analyze 隊名 → AI 分析預測
 • /help → 使用說明
 
-🤖 有任何問題都可以直接問我！
+🧠 支援模糊搜尋，打錯字也能查！
 📡 t.me/LA11118""")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /help")
-    await reply(update, """📖 使用說明 V5.3
+    await reply(update, """📖 使用說明 V5.2
 
 🔍 查詢方式：
 • 直接輸入隊名：利物浦 曼城
@@ -158,7 +137,6 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • 自動判斷聯盟（不會混搭）
 • 每次查詢附帶近3場戰績
 • AI 專業分析預測
-• 🤖 AI 客服聊天（直接問問題！）
 
 📡 世界體育數據室""")
 
@@ -419,15 +397,14 @@ async def cmd_odds(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ===== 訊息處理 =====
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理私訊：比分查詢優先，其餘交由 AI 客服回應"""
+    """處理私訊"""
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
     logger.info(f"[私訊] {text}")
 
+    # 檢查特殊關鍵字
     text_lower = text.lower()
-
-    # 特殊關鍵字優先路由
     if any(kw in text_lower for kw in ["即時", "live", "進行中"]):
         await cmd_live(update, context)
     elif any(kw in text_lower for kw in ["熱門", "焦點", "推薦"]):
@@ -437,31 +414,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await cmd_leaders(update, context)
     elif any(kw in text_lower for kw in ["分析", "預測", "analyze"]):
         # 移除關鍵字取得隊名
-        clean_text = text
         for kw in ["分析", "預測", "analyze"]:
-            clean_text = clean_text.replace(kw, "").strip()
-        if clean_text:
-            context.args = clean_text.split()
+            text = text.replace(kw, "").strip()
+        if text:
+            context.args = text.split()
             await cmd_analyze(update, context)
         else:
             await reply(update, "⚠️ 請輸入隊名\n範例：洋基 分析")
     elif is_query(text):
-        # 識別為比分查詢
         await handle_score_query(update, text)
-    else:
-        # 非比分查詢 → 交由 AI 客服回應
-        await handle_ai_chat(update, text)
 
 
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理群組訊息：比分查詢優先，其餘交由 AI 客服回應"""
+    """處理群組訊息"""
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
     logger.info(f"[群組] {text}")
 
     text_lower = text.lower()
-
     if any(kw in text_lower for kw in ["即時", "live", "進行中"]):
         await cmd_live(update, context)
     elif any(kw in text_lower for kw in ["熱門", "焦點", "推薦"]):
@@ -470,21 +441,17 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
         context.args = text.split()[1:] if len(text.split()) > 1 else []
         await cmd_leaders(update, context)
     elif any(kw in text_lower for kw in ["分析", "預測", "analyze"]):
-        clean_text = text
         for kw in ["分析", "預測", "analyze"]:
-            clean_text = clean_text.replace(kw, "").strip()
-        if clean_text:
-            context.args = clean_text.split()
+            text = text.replace(kw, "").strip()
+        if text:
+            context.args = text.split()
             await cmd_analyze(update, context)
     elif is_query(text):
         await handle_score_query(update, text)
-    else:
-        # 群組中非查詢訊息也交由 AI 客服回應
-        await handle_ai_chat(update, text)
 
 
 async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理頻道訊息（頻道不做 AI 聊天，只處理查詢）"""
+    """處理頻道訊息"""
     if not update.channel_post or not update.channel_post.text:
         return
     text = update.channel_post.text.strip()
@@ -544,7 +511,7 @@ async def setup_commands(app: Application):
 
 
 def main():
-    logger.info("🤖 啟動智能查詢 Bot V5.3（含 AI 客服）...")
+    logger.info("🤖 啟動智能查詢 Bot V5.2...")
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -579,7 +546,7 @@ def main():
 
     app.post_init = setup_commands
 
-    logger.info("✅ Bot V5.3 已啟動，等待查詢...")
+    logger.info("✅ Bot V5.2 已啟動，等待查詢...")
     app.run_polling(
         drop_pending_updates=True,
         allowed_updates=["message", "channel_post", "my_chat_member"],

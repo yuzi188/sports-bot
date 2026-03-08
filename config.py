@@ -1,15 +1,12 @@
 """
 體育分析機器人 - 配置文件
 """
-
-# Telegram 設定
 import os
+# Telegram 設定
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "@LA11118")
-
 # ESPN API 基礎 URL
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports"
-
 # 支援的體育賽事
 SPORTS = {
     # 足球聯賽
@@ -38,10 +35,8 @@ SPORTS = {
         "nhl": {"name": "NHL 冰球", "emoji": "🏒", "priority": 1},
     },
 }
-
 # 時區設定（台灣時間 UTC+8）
 TIMEZONE = "Asia/Taipei"
-
 # 發文排程（台灣時間）
 SCHEDULE = {
     "morning_preview": "10:00",      # 今日賽程預覽
