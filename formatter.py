@@ -98,6 +98,7 @@ def format_preview_message(ai_preview: str) -> str:
         "",
         sep,
         "📡 世界體育數據室",
+        "💼 商務合作：https://t.me/OFA168Abe1",
         "🔔 開啟通知不錯過精彩賽事",
     ]
     return "\n".join(lines)
@@ -133,7 +134,7 @@ def format_analysis_message(match_data: dict, league_info: dict, analysis: str) 
             if odds.get("overUnder"):
                 lines.append(f"📏 大小分：{odds['overUnder']}")
 
-    lines.extend(["", dash, "🔍 專業分析", dash, "", analysis, "", sep, "📡 世界體育數據室", "⚠️ 分析僅供參考"])
+    lines.extend(["", dash, "🔍 專業分析", dash, "", analysis, "", sep, "📡 世界體育數據室", "💼 商務合作：https://t.me/OFA168Abe1", "⚠️ 分析僅供參考"])
     return "\n".join(lines)
 
 
@@ -150,6 +151,7 @@ def format_review_message(ai_review: str) -> str:
         "",
         sep,
         "📡 世界體育數據室",
+        "💼 商務合作：https://t.me/OFA168Abe1",
         "🌙 明日見",
     ]
     return "\n".join(lines)
