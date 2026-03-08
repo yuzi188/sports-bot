@@ -1,10 +1,11 @@
 """
-即時比分查詢模組 v5 - 智能搜尋引擎 + 未來賽程查詢
+即時比分查詢模組 v6 - 智能搜尋引擎 + 未來賽程查詢 + 即時詳細資料
 """
 
 import requests
 from datetime import datetime, timedelta
 import pytz
+import logging
 from config import ESPN_BASE, TIMEZONE
 from smart_search import (
     smart_parse, match_event_smart, translate_name,
@@ -12,6 +13,7 @@ from smart_search import (
 )
 
 tz = pytz.timezone(TIMEZONE)
+logger = logging.getLogger(__name__)
 
 
 def search_live_scores(query: str) -> dict:
@@ -39,12 +41,16 @@ def search_live_scores(query: str) -> dict:
                 for event in events:
                     pe = parse_event(event, emoji)
                     if pe:
+                        pe["sport"] = sport
+                        pe["league"] = league
                         matched_events.append(pe)
             else:
                 for event in events:
                     if match_event_smart(event, teams):
                         pe = parse_event(event, emoji)
                         if pe:
+                            pe["sport"] = sport
+                            pe["league"] = league
                             matched_events.append(pe)
         except:
             continue
@@ -316,6 +322,9 @@ def parse_event(event: dict, emoji: str = "🏟") -> dict:
         "away": away,
         "date": event.get("date", ""),
         "pool": pool_info,
+        "game_id": event.get("id", ""),
+        "sport": "",   # 由呼叫方填入
+        "league": "",  # 由呼叫方填入
     }
 
 
@@ -349,8 +358,14 @@ def format_response(result: dict) -> str:
     MAX_SHOW = 20
     show = events[:MAX_SHOW]
 
+    # 判斷是否有進行中的比賽需要詳細資料
+    has_live = any(e["state"] == "in" for e in show)
+    # 只有一場進行中比賽時才自動帶入詳細資料（避免多場比賽時太長）
+    single_live = sum(1 for e in show if e["state"] == "in") == 1
+
     for e in show:
-        lines.append(format_single_event(e))
+        use_details = (e["state"] == "in" and single_live)
+        lines.append(format_single_event(e, with_details=use_details))
         lines.append("")
 
     if len(events) > MAX_SHOW:
@@ -374,8 +389,14 @@ def format_response(result: dict) -> str:
     return "\n".join(lines)
 
 
-def format_single_event(event: dict) -> str:
-    """格式化單場比賽"""
+def format_single_event(event: dict, with_details: bool = False) -> str:
+    """
+    格式化單場比賽
+
+    Args:
+        event: parse_event 回傳的賽事字典
+        with_details: 若為 True 且比賽進行中，自動呼叫 summary API 附加詳細資料
+    """
     home = event["home"]
     away = event["away"]
     emoji = event["emoji"]
@@ -383,11 +404,26 @@ def format_single_event(event: dict) -> str:
     pool_str = f" ({pool})" if pool else ""
 
     if event["state"] == "in":
-        return (
+        base = (
             f"{emoji} {away['name']} vs {home['name']}{pool_str}\n"
             f"🔴 進行中 {event['status_detail']}\n"
             f"{away['name']} {away['score']} - {home['score']} {home['name']}"
         )
+        # 進行中：嘗試附加詳細資料
+        if with_details:
+            game_id = event.get("game_id", "")
+            sport = event.get("sport", "")
+            league = event.get("league", "")
+            if game_id and sport and league:
+                try:
+                    from modules.game_details import get_live_game_details, format_game_details
+                    details = get_live_game_details(game_id, sport, league)
+                    if details.get("success"):
+                        detail_text = format_game_details(details)
+                        return detail_text
+                except Exception as e:
+                    logger.warning(f"get_live_game_details 失敗: {e}")
+        return base
     elif event["state"] == "post":
         return (
             f"{emoji} {away['name']} vs {home['name']}{pool_str}\n"
@@ -426,6 +462,4 @@ def format_no_result(parsed: dict) -> str:
     )
 
 
-# 補充 logger（live_query 本身沒有 logger，補上）
-import logging
-logger = logging.getLogger(__name__)
+

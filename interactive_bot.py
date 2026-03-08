@@ -1,6 +1,6 @@
 """
-互動式 Telegram Bot V9 - 上下文感知 + AI 全接管
-修復：意圖分類器傳入對話歷史，正確理解「下場」「接下來」等追問
+互動式 Telegram Bot V10 - 上下文感知 + AI 全接管 + 即時詳細資料
+修復：加入 ESPN summary API 即時詳細資料（投手/打者/進球/換人）
 """
 
 import sys
@@ -25,6 +25,7 @@ from live_query import (
     search_live_scores, format_response,
     get_upcoming_matches, format_upcoming_response,
 )
+from modules.game_details import get_live_game_details, format_game_details
 from smart_search import SPORT_KEYWORDS
 from team_db import ALIAS_INDEX
 
@@ -46,6 +47,16 @@ EXTRA_KEYWORDS = [
     "排行", "射手", "全壘打", "得分王",
     "熱門", "焦點", "推薦",
     "分析", "預測",
+]
+
+# 詳細資料關鍵字（觸發即時詳細資料查詢）
+DETAIL_KEYWORDS = [
+    "先發投手", "先發", "投手", "投球", "現場投手",
+    "打者", "打席", "局數", "上半局", "下半局",
+    "壞上", "壞包", "壞數", "壞式", "出局",
+    "進球", "進球者", "助攻", "換人",
+    "節次", "剩餘時間", "各節得分",
+    "黃牌", "紅牌", "詳細", "現場狀況",
 ]
 
 
@@ -150,6 +161,16 @@ async def cmd_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply(update, "⚠️ 請輸入隊名\n範例：/score 洋基 紅襪")
         return
     await handle_score_query(update, query)
+
+
+async def cmd_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """查詢指定比賽的即時詳細資料（投手/打者/進球/換人）"""
+    query = " ".join(context.args) if context.args else ""
+    logger.info(f"收到 /details: {query}")
+    if not query:
+        await reply(update, "⚠️ 請輸入隊名\n範例：/details 洋基\n\n會自動查詢進行中比賽的詳細資料")
+        return
+    await handle_details_query(update, query)
 
 
 async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -415,7 +436,13 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
 
         logger.info(f"[dispatch] user={user_id} text='{text}' → action={action} query='{query}'")
 
-        if action == "upcoming" and query:
+        if action == "details" and query:
+            # 查詢即時詳細資料（先發投手/進球/換人）
+            await handle_details_query(update, query)
+            add_to_history(user_id, "user", text)
+            add_to_history(user_id, "assistant", f"查詢了 {query} 的即時詳細資料")
+
+        elif action == "upcoming" and query:
             # 查詢未來賽程（修復「下場對誰」問題的核心）
             await reply(update, f"⏳ 查詢 {query} 的下一場賽程...")
             result = get_upcoming_matches(query)
@@ -529,6 +556,58 @@ async def handle_score_query(update: Update, query: str, user_id: int = 0):
         await reply(update, "❌ 查詢失敗，請稍後再試")
 
 
+async def handle_details_query(update: Update, query: str):
+    """
+    處理即時詳細資料查詢（投手/打者/進球/換人）
+    自動找到進行中的比賽並呼叫 summary API
+    """
+    logger.info(f"即時詳細資料查詢: {query}")
+    await reply(update, f"⏳ 查詢 {query} 的即時詳細資料...")
+
+    try:
+        result = search_live_scores(query)
+        events = result["events"]
+
+        # 尋找進行中的比賽
+        live_events = [e for e in events if e.get("state") == "in"]
+
+        if not live_events:
+            # 沒有進行中的比賽，嘗試顯示最近一場（已結束）
+            post_events = [e for e in events if e.get("state") == "post"]
+            if post_events:
+                e = post_events[0]
+                game_id = e.get("game_id", "")
+                sport = e.get("sport", "")
+                league = e.get("league", "")
+                if game_id and sport and league:
+                    details = get_live_game_details(game_id, sport, league)
+                    msg = format_game_details(details)
+                    await reply_split(update, msg)
+                else:
+                    await reply(update, f"😴 {query} 目前沒有進行中的比賽")
+            else:
+                await reply(update, f"😴 {query} 目前沒有進行中的比賽\n\n請先查詢比分確認比賽進行中")
+            return
+
+        # 有進行中的比賽，取第一場
+        e = live_events[0]
+        game_id = e.get("game_id", "")
+        sport = e.get("sport", "")
+        league = e.get("league", "")
+
+        if not game_id or not sport or not league:
+            await reply(update, "❌ 無法取得比賽 ID，請稍後再試")
+            return
+
+        details = get_live_game_details(game_id, sport, league)
+        msg = format_game_details(details)
+        await reply_split(update, msg)
+
+    except Exception as e:
+        logger.error(f"Details query error: {e}", exc_info=True)
+        await reply(update, "❌ 查詢失敗，請稍後再試")
+
+
 def split_message(text: str, max_len: int = 4000) -> list:
     parts = []
     while text:
@@ -548,6 +627,7 @@ def split_message(text: str, max_len: int = 4000) -> list:
 async def setup_commands(app: Application):
     commands = [
         BotCommand("score", "查詢即時比分"),
+        BotCommand("details", "即時詳細資料（投手/進球/換人）"),
         BotCommand("today", "今日所有賽事"),
         BotCommand("live", "進行中的比賽"),
         BotCommand("hot", "今日熱門賽事"),
@@ -568,6 +648,7 @@ def main():
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("score", cmd_score))
+    app.add_handler(CommandHandler("details", cmd_details))
     app.add_handler(CommandHandler("today", cmd_today))
     app.add_handler(CommandHandler("live", cmd_live))
     app.add_handler(CommandHandler("hot", cmd_hot))
@@ -595,7 +676,7 @@ def main():
 
     app.post_init = setup_commands
 
-    logger.info("✅ Bot V9 已啟動，等待查詢...")
+    logger.info("✅ Bot V10 已啟動，等待查詢...")
     app.run_polling(
         drop_pending_updates=True,
         allowed_updates=["message", "channel_post", "my_chat_member"],

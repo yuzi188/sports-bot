@@ -144,11 +144,11 @@ def should_use_bot_function(user_id: int, user_message: str) -> dict:
     """
     讓 AI 判斷用戶意圖，決定要用哪個 Bot 功能還是直接聊天。
 
-    V9 修復：傳入對話歷史，讓分類器能理解「下場」「他們」等指代上文的追問。
+    V10 新增：details 意圖識別（先發投手/進球/換人等詳細查詢）
 
     Returns:
         dict: {
-            "action": "score"|"upcoming"|"analyze"|"live"|"hot"|"leaders"|"today"|"chat",
+            "action": "score"|"details"|"upcoming"|"analyze"|"live"|"hot"|"leaders"|"today"|"chat",
             "query": "查詢關鍵字（如果有的話）"
         }
     """
