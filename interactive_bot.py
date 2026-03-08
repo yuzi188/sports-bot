@@ -1,9 +1,9 @@
 """
-互動式 Telegram Bot V14 - 頻道留言優化與個資偵測
+互動式 Telegram Bot V15 - 語言切換修復
 新增：
-1. 更新私訊歡迎訊息（多站台入口）
-2. 頻道留言區幽默引導（引導至 @LA1111_bot）
-3. 頻道留言區個資偵測與自動刪除
+1. dispatch_message 傳遞 user_lang 給 get_ai_response
+2. 語言設定正確影響 AI 回覆語言
+3. 保留所有原有功能
 """
 import sys
 import os
@@ -256,12 +256,14 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
     3. 查詢完成後，將用戶訊息和 Bot 回應記錄到對話歷史
     """
     user_id = update.effective_user.id if update.effective_user else 0
+    # 取得用戶語言設定（預設繁體中文）
+    user_lang = context.user_data.get("language", "zh_tw") if context.user_data else "zh_tw"
     try:
         from modules.ai_chat import should_use_bot_function, get_ai_response, add_to_history
         intent = should_use_bot_function(user_id, text)
         action = intent.get("action", "chat")
         query = intent.get("query", "").strip()
-        logger.info(f"[dispatch] user={user_id} text='{text}' → action={action} query='{query}'")
+        logger.info(f"[dispatch] user={user_id} lang={user_lang} text='{text}' → action={action} query='{query}'")
 
         if action == "details" and query:
             await handle_details_query(update, query)
@@ -291,7 +293,7 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
         elif is_query(text):
             await handle_score_query(update, text, user_id=user_id)
         else:
-            ai_reply = get_ai_response(user_id, text)
+            ai_reply = get_ai_response(user_id, text, user_lang=user_lang)
             await reply(update, ai_reply)
     except Exception as e:
         logger.error(f"dispatch error: {e}", exc_info=True)
@@ -300,7 +302,7 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
         else:
             try:
                 from modules.ai_chat import get_ai_response
-                ai_reply = get_ai_response(user_id, text)
+                ai_reply = get_ai_response(user_id, text, user_lang=user_lang)
                 await reply(update, ai_reply)
             except Exception as e2:
                 logger.error(f"fallback error: {e2}")
