@@ -399,75 +399,98 @@ async def cmd_odds(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ===== 訊息處理 =====
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理私訊"""
+    """處理私訊 - AI 全接管版"""
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
     logger.info(f"[私訊] {text}")
 
-    # 檢查特殊關鍵字
-    text_lower = text.lower()
-    if any(kw in text_lower for kw in ["即時", "live", "進行中"]):
-        await cmd_live(update, context)
-    elif any(kw in text_lower for kw in ["熱門", "焦點", "推薦"]):
-        await cmd_hot(update, context)
-    elif any(kw in text_lower for kw in ["排行", "射手", "全壘打", "得分王"]):
-        context.args = text.split()[1:] if len(text.split()) > 1 else []
-        await cmd_leaders(update, context)
-    elif any(kw in text_lower for kw in ["分析", "預測", "analyze"]):
-        # 移除關鍵字取得隊名
-        for kw in ["分析", "預測", "analyze"]:
-            text = text.replace(kw, "").strip()
-        if text:
-            context.args = text.split()
+    user_id = update.effective_user.id if update.effective_user else 0
+
+    try:
+        from modules.ai_chat import should_use_bot_function, get_ai_response
+        intent = should_use_bot_function(user_id, text)
+        action = intent.get("action", "chat")
+        query = intent.get("query", "").strip()
+
+        if action == "live":
+            await cmd_live(update, context)
+        elif action == "hot":
+            await cmd_hot(update, context)
+        elif action == "leaders":
+            context.args = query.split() if query else []
+            await cmd_leaders(update, context)
+        elif action == "today":
+            await cmd_today(update, context)
+        elif action == "analyze" and query:
+            context.args = query.split()
             await cmd_analyze(update, context)
+        elif action == "score" and query:
+            await handle_score_query(update, query)
+        elif is_query(text):
+            await handle_score_query(update, text)
         else:
-            await reply(update, "⚠️ 請輸入隊名\n範例：洋基 分析")
-    elif is_query(text):
-        await handle_score_query(update, text)
-    else:
-        # AI 客服聊天 fallback
-        try:
-            from modules.ai_chat import get_ai_response
-            user_id = update.effective_user.id if update.effective_user else 0
             ai_reply = get_ai_response(user_id, text)
             await reply(update, ai_reply)
-        except Exception as e:
-            logger.error(f"AI chat error: {e}")
+    except Exception as e:
+        logger.error(f"AI intent error: {e}")
+        # fallback: 嘗試直接查詢或 AI 聊天
+        if is_query(text):
+            await handle_score_query(update, text)
+        else:
+            try:
+                from modules.ai_chat import get_ai_response
+                ai_reply = get_ai_response(user_id, text)
+                await reply(update, ai_reply)
+            except Exception as e2:
+                logger.error(f"AI chat fallback error: {e2}")
 
 
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理群組訊息"""
+    """處理群組訊息 - AI 全接管版"""
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
     logger.info(f"[群組] {text}")
 
-    text_lower = text.lower()
-    if any(kw in text_lower for kw in ["即時", "live", "進行中"]):
-        await cmd_live(update, context)
-    elif any(kw in text_lower for kw in ["熱門", "焦點", "推薦"]):
-        await cmd_hot(update, context)
-    elif any(kw in text_lower for kw in ["排行", "射手", "全壘打", "得分王"]):
-        context.args = text.split()[1:] if len(text.split()) > 1 else []
-        await cmd_leaders(update, context)
-    elif any(kw in text_lower for kw in ["分析", "預測", "analyze"]):
-        for kw in ["分析", "預測", "analyze"]:
-            text = text.replace(kw, "").strip()
-        if text:
-            context.args = text.split()
+    user_id = update.effective_user.id if update.effective_user else 0
+
+    try:
+        from modules.ai_chat import should_use_bot_function, get_ai_response
+        intent = should_use_bot_function(user_id, text)
+        action = intent.get("action", "chat")
+        query = intent.get("query", "").strip()
+
+        if action == "live":
+            await cmd_live(update, context)
+        elif action == "hot":
+            await cmd_hot(update, context)
+        elif action == "leaders":
+            context.args = query.split() if query else []
+            await cmd_leaders(update, context)
+        elif action == "today":
+            await cmd_today(update, context)
+        elif action == "analyze" and query:
+            context.args = query.split()
             await cmd_analyze(update, context)
-    elif is_query(text):
-        await handle_score_query(update, text)
-    else:
-        # AI 客服聊天 fallback
-        try:
-            from modules.ai_chat import get_ai_response
-            user_id = update.effective_user.id if update.effective_user else 0
+        elif action == "score" and query:
+            await handle_score_query(update, query)
+        elif is_query(text):
+            await handle_score_query(update, text)
+        else:
             ai_reply = get_ai_response(user_id, text)
             await reply(update, ai_reply)
-        except Exception as e:
-            logger.error(f"AI chat error: {e}")
+    except Exception as e:
+        logger.error(f"AI intent error: {e}")
+        if is_query(text):
+            await handle_score_query(update, text)
+        else:
+            try:
+                from modules.ai_chat import get_ai_response
+                ai_reply = get_ai_response(user_id, text)
+                await reply(update, ai_reply)
+            except Exception as e2:
+                logger.error(f"AI chat fallback error: {e2}")
 
 
 async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
