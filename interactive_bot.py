@@ -281,8 +281,9 @@ async def cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         match_info = "\n".join(info_parts)
 
-        from modules.ai_predict import generate_match_analysis
+        from modules.ai_predict import generate_match_analysis, generate_win_probability
         analysis = generate_match_analysis(match_info)
+        win_prob = generate_win_probability(match_info)
 
         # 格式化回覆
         sep = "═" * 24
@@ -303,6 +304,7 @@ async def cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 lines.append(f"{emoji} {away['name']} vs {home['name']} ⏰")
 
+        lines.extend(["", dash, "📊 AI 勝率預測", dash, "", win_prob, ""])
         lines.extend(["", dash, "🧠 AI 專業分析", dash, "", analysis, ""])
 
         # 近期戰績
