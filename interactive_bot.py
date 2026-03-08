@@ -1,6 +1,6 @@
 """
-互動式 Telegram Bot V5.2 - 全功能智能體育查詢
-全部使用免費 API（ESPN + OpenAI 已有 key）
+互動式 Telegram Bot V9 - 上下文感知 + AI 全接管
+修復：意圖分類器傳入對話歷史，正確理解「下場」「接下來」等追問
 """
 
 import sys
@@ -21,7 +21,10 @@ from telegram.ext import (
 )
 
 from config import BOT_TOKEN, TIMEZONE
-from live_query import search_live_scores, format_response
+from live_query import (
+    search_live_scores, format_response,
+    get_upcoming_matches, format_upcoming_response,
+)
 from smart_search import SPORT_KEYWORDS
 from team_db import ALIAS_INDEX
 
@@ -34,7 +37,7 @@ logger = logging.getLogger(__name__)
 tz = pytz.timezone(TIMEZONE)
 
 
-# ===== 查詢判斷 =====
+# ===== 查詢判斷（保留作為 fallback） =====
 
 EXTRA_KEYWORDS = [
     "即時", "比分", "比數", "戰況", "結果", "怎麼樣",
@@ -47,22 +50,19 @@ EXTRA_KEYWORDS = [
 
 
 def is_query(text: str) -> bool:
-    """判斷訊息是否為比分查詢"""
+    """判斷訊息是否為比分查詢（fallback 用）"""
     if not text or len(text) < 2 or len(text) > 100:
         return False
 
     text_lower = text.lower().strip()
 
-    # 運動類型關鍵字
     for sport_kw in SPORT_KEYWORDS:
         if sport_kw.lower() == text_lower or sport_kw in text:
             return True
 
-    # 查詢指示詞
     if any(ind in text for ind in EXTRA_KEYWORDS):
         return True
 
-    # 已知隊名別名
     for alias in ALIAS_INDEX:
         if len(alias) >= 2 and alias in text_lower:
             return True
@@ -92,7 +92,7 @@ async def reply_split(update: Update, text: str):
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /start")
-    await reply(update, """🏟 歡迎來到【世界體育數據室】V5.2
+    await reply(update, """🏟 歡迎來到【世界體育數據室】V9
 
 直接輸入隊名或運動類型即可查詢。
 
@@ -110,18 +110,19 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • /analyze 隊名 → AI 分析預測
 • /help → 使用說明
 
-🧠 支援模糊搜尋，打錯字也能查！
+🤖 有任何問題都可以直接問我！
 📡 t.me/LA11118""")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /help")
-    await reply(update, """📖 使用說明 V5.2
+    await reply(update, """📖 使用說明 V9
 
 🔍 查詢方式：
 • 直接輸入隊名：利物浦 曼城
 • 輸入運動類型：棒球、NBA、足球
 • WBC 經典賽：WBC、經典賽
+• 問「日本下場對誰」→ AI 自動查未來賽程
 
 📊 指令列表：
 • /score 隊名 → 即時比分 + 近3場戰績
@@ -136,7 +137,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • 打錯字也能查（洋機→洋基）
 • 自動判斷聯盟（不會混搭）
 • 每次查詢附帶近3場戰績
-• AI 專業分析預測
+• AI 理解上下文追問（「他們下場呢？」）
+• 🤖 AI 客服聊天（直接問問題！）
 
 📡 世界體育數據室""")
 
@@ -227,7 +229,6 @@ async def cmd_leaders(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif "足球" in args or "英超" in args or "射手" in args:
             result = get_football_scorers()
         else:
-            # 預設顯示全部
             parts = []
             parts.append(get_mlb_hr_leaders(5))
             parts.append(get_nba_scoring_leaders(5))
@@ -260,7 +261,6 @@ async def cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await reply(update, f"😴 找不到「{query}」的相關比賽")
             return
 
-        # 組合比賽資訊
         info_parts = []
         for e in events[:5]:
             home = e["home"]
@@ -272,7 +272,6 @@ async def cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 info_parts.append(f"{away['name']} vs {home['name']} (未開始)")
 
-        # 加入近期戰績
         for team_cn, matches in recent.items():
             if matches:
                 info_parts.append(f"\n{team_cn} 近期戰績：")
@@ -285,7 +284,6 @@ async def cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
         analysis = generate_match_analysis(match_info)
         win_prob = generate_win_probability(match_info)
 
-        # 格式化回覆
         sep = "═" * 24
         dash = "─" * 20
         parsed = result["parsed"]
@@ -307,7 +305,6 @@ async def cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.extend(["", dash, "📊 AI 勝率預測", dash, "", win_prob, ""])
         lines.extend(["", dash, "🧠 AI 專業分析", dash, "", analysis, ""])
 
-        # 近期戰績
         for team_cn, matches in recent.items():
             if matches:
                 lines.append(f"📋 {team_cn} 近期戰績：")
@@ -396,105 +393,102 @@ async def cmd_odds(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply(update, "❌ 查詢失敗，請稍後再試")
 
 
-# ===== 訊息處理 =====
+# ===== 核心：上下文感知訊息處理 =====
+
+async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    """
+    統一的訊息分發函數（私訊和群組共用）
+
+    流程：
+    1. 呼叫 should_use_bot_function（傳入對話歷史）判斷意圖
+    2. 根據意圖路由到對應功能
+    3. 查詢完成後，將用戶訊息和 Bot 回應記錄到對話歷史
+    """
+    user_id = update.effective_user.id if update.effective_user else 0
+
+    try:
+        from modules.ai_chat import should_use_bot_function, get_ai_response, add_to_history
+
+        intent = should_use_bot_function(user_id, text)
+        action = intent.get("action", "chat")
+        query = intent.get("query", "").strip()
+
+        logger.info(f"[dispatch] user={user_id} text='{text}' → action={action} query='{query}'")
+
+        if action == "upcoming" and query:
+            # 查詢未來賽程（修復「下場對誰」問題的核心）
+            await reply(update, f"⏳ 查詢 {query} 的下一場賽程...")
+            result = get_upcoming_matches(query)
+            response = format_upcoming_response(result)
+            await reply_split(update, response)
+            # 記錄到對話歷史，讓後續追問能繼續理解上下文
+            add_to_history(user_id, "user", text)
+            add_to_history(user_id, "assistant", response[:200])  # 只記摘要
+
+        elif action == "score" and query:
+            await handle_score_query(update, query, user_id=user_id)
+
+        elif action == "live":
+            await cmd_live(update, context)
+
+        elif action == "hot":
+            await cmd_hot(update, context)
+
+        elif action == "leaders":
+            context.args = query.split() if query else []
+            await cmd_leaders(update, context)
+
+        elif action == "today":
+            await cmd_today(update, context)
+
+        elif action == "analyze" and query:
+            context.args = query.split()
+            await cmd_analyze(update, context)
+
+        elif is_query(text):
+            # fallback：規則式判斷為查詢
+            await handle_score_query(update, text, user_id=user_id)
+
+        else:
+            # 純聊天：交由 AI 回應（get_ai_response 內部自動記錄歷史）
+            ai_reply = get_ai_response(user_id, text)
+            await reply(update, ai_reply)
+
+    except Exception as e:
+        logger.error(f"dispatch error: {e}", exc_info=True)
+        # fallback：嘗試直接查詢或 AI 聊天
+        if is_query(text):
+            await handle_score_query(update, text)
+        else:
+            try:
+                from modules.ai_chat import get_ai_response
+                ai_reply = get_ai_response(user_id, text)
+                await reply(update, ai_reply)
+            except Exception as e2:
+                logger.error(f"fallback error: {e2}")
+                await reply(update, "😅 抱歉，系統暫時無法回應，請稍後再試！")
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理私訊 - AI 全接管版"""
+    """處理私訊"""
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
     logger.info(f"[私訊] {text}")
-
-    user_id = update.effective_user.id if update.effective_user else 0
-
-    try:
-        from modules.ai_chat import should_use_bot_function, get_ai_response
-        intent = should_use_bot_function(user_id, text)
-        action = intent.get("action", "chat")
-        query = intent.get("query", "").strip()
-
-        if action == "live":
-            await cmd_live(update, context)
-        elif action == "hot":
-            await cmd_hot(update, context)
-        elif action == "leaders":
-            context.args = query.split() if query else []
-            await cmd_leaders(update, context)
-        elif action == "today":
-            await cmd_today(update, context)
-        elif action == "analyze" and query:
-            context.args = query.split()
-            await cmd_analyze(update, context)
-        elif action == "score" and query:
-            await handle_score_query(update, query)
-        elif is_query(text):
-            await handle_score_query(update, text)
-        else:
-            ai_reply = get_ai_response(user_id, text)
-            await reply(update, ai_reply)
-    except Exception as e:
-        logger.error(f"AI intent error: {e}")
-        # fallback: 嘗試直接查詢或 AI 聊天
-        if is_query(text):
-            await handle_score_query(update, text)
-        else:
-            try:
-                from modules.ai_chat import get_ai_response
-                ai_reply = get_ai_response(user_id, text)
-                await reply(update, ai_reply)
-            except Exception as e2:
-                logger.error(f"AI chat fallback error: {e2}")
+    await dispatch_message(update, context, text)
 
 
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理群組訊息 - AI 全接管版"""
+    """處理群組訊息"""
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
     logger.info(f"[群組] {text}")
-
-    user_id = update.effective_user.id if update.effective_user else 0
-
-    try:
-        from modules.ai_chat import should_use_bot_function, get_ai_response
-        intent = should_use_bot_function(user_id, text)
-        action = intent.get("action", "chat")
-        query = intent.get("query", "").strip()
-
-        if action == "live":
-            await cmd_live(update, context)
-        elif action == "hot":
-            await cmd_hot(update, context)
-        elif action == "leaders":
-            context.args = query.split() if query else []
-            await cmd_leaders(update, context)
-        elif action == "today":
-            await cmd_today(update, context)
-        elif action == "analyze" and query:
-            context.args = query.split()
-            await cmd_analyze(update, context)
-        elif action == "score" and query:
-            await handle_score_query(update, query)
-        elif is_query(text):
-            await handle_score_query(update, text)
-        else:
-            ai_reply = get_ai_response(user_id, text)
-            await reply(update, ai_reply)
-    except Exception as e:
-        logger.error(f"AI intent error: {e}")
-        if is_query(text):
-            await handle_score_query(update, text)
-        else:
-            try:
-                from modules.ai_chat import get_ai_response
-                ai_reply = get_ai_response(user_id, text)
-                await reply(update, ai_reply)
-            except Exception as e2:
-                logger.error(f"AI chat fallback error: {e2}")
+    await dispatch_message(update, context, text)
 
 
 async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """處理頻道訊息"""
+    """處理頻道訊息（頻道只處理查詢，不做 AI 聊天）"""
     if not update.channel_post or not update.channel_post.text:
         return
     text = update.channel_post.text.strip()
@@ -509,8 +503,8 @@ async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE
         await handle_score_query(update, text)
 
 
-async def handle_score_query(update: Update, query: str):
-    """處理比分查詢"""
+async def handle_score_query(update: Update, query: str, user_id: int = 0):
+    """處理比分查詢，查詢完成後記錄到對話歷史"""
     logger.info(f"開始查詢: {query}")
     try:
         result = search_live_scores(query)
@@ -518,6 +512,18 @@ async def handle_score_query(update: Update, query: str):
         logger.info(f"查詢結果: {len(events)} 場")
         response = format_response(result)
         await reply_split(update, response)
+
+        # 記錄到對話歷史，讓後續「下場對誰」能知道剛才查了什麼隊
+        if user_id:
+            try:
+                from modules.ai_chat import add_to_history
+                parsed = result.get("parsed", {})
+                team_names = " / ".join(t["cn_name"] for t in parsed.get("teams", [])) if parsed.get("teams") else query
+                add_to_history(user_id, "user", query)
+                add_to_history(user_id, "assistant", f"查詢結果：{team_names} 共 {len(events)} 場比賽")
+            except Exception:
+                pass
+
     except Exception as e:
         logger.error(f"Query error: {e}", exc_info=True)
         await reply(update, "❌ 查詢失敗，請稍後再試")
@@ -554,7 +560,7 @@ async def setup_commands(app: Application):
 
 
 def main():
-    logger.info("🤖 啟動智能查詢 Bot V5.2...")
+    logger.info("🤖 啟動智能查詢 Bot V9（上下文感知版）...")
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -575,7 +581,7 @@ def main():
         handle_message
     ))
 
-    # 群組 / supergroup（Discussion 群組）
+    # 群組 / supergroup
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & (filters.ChatType.GROUP | filters.ChatType.SUPERGROUP),
         handle_group_message
@@ -589,7 +595,7 @@ def main():
 
     app.post_init = setup_commands
 
-    logger.info("✅ Bot V5.2 已啟動，等待查詢...")
+    logger.info("✅ Bot V9 已啟動，等待查詢...")
     app.run_polling(
         drop_pending_updates=True,
         allowed_updates=["message", "channel_post", "my_chat_member"],

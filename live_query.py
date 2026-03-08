@@ -1,5 +1,5 @@
 """
-即時比分查詢模組 v4 - 智能搜尋引擎
+即時比分查詢模組 v5 - 智能搜尋引擎 + 未來賽程查詢
 """
 
 import requests
@@ -59,6 +59,129 @@ def search_live_scores(query: str) -> dict:
         "events": matched_events,
         "recent_history": recent_history,
     }
+
+
+def get_upcoming_matches(query: str) -> dict:
+    """
+    查詢指定隊伍的未來賽程（下一場或接下來幾場）
+
+    搜尋策略：
+    1. 先查今日 scoreboard（state=pre 的比賽即為未開始）
+    2. 若今日無未來賽程，往後查 7 天
+    3. 回傳最多 3 場未來賽事
+
+    Returns:
+        dict: {
+            "parsed": parsed,
+            "upcoming": [event_dict, ...],   # 最多 3 場
+            "found": bool
+        }
+    """
+    parsed = smart_parse(query)
+    teams = parsed["teams"]
+    endpoints = parsed["endpoints"]
+
+    if not teams:
+        return {"parsed": parsed, "upcoming": [], "found": False}
+
+    upcoming_events = []
+    today = datetime.now(tz)
+
+    # 搜尋今日 + 未來 7 天
+    for day_offset in range(0, 8):
+        if len(upcoming_events) >= 3:
+            break
+
+        date = today + timedelta(days=day_offset)
+        date_str = date.strftime("%Y%m%d")
+
+        for sport, league, emoji in endpoints:
+            if len(upcoming_events) >= 3:
+                break
+            try:
+                url = f"{ESPN_BASE}/{sport}/{league}/scoreboard?dates={date_str}"
+                resp = requests.get(url, timeout=10)
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                events = data.get("events", [])
+
+                for event in events:
+                    if not match_event_smart(event, teams):
+                        continue
+
+                    comps = event.get("competitions", [])
+                    if not comps:
+                        continue
+                    comp = comps[0]
+                    status = comp.get("status", {}).get("type", {})
+                    state = status.get("state", "")
+
+                    # 只取未開始的比賽
+                    if state != "pre":
+                        continue
+
+                    pe = parse_event(event, emoji)
+                    if pe:
+                        # 避免重複
+                        is_dup = any(
+                            u["home"]["name"] == pe["home"]["name"]
+                            and u["away"]["name"] == pe["away"]["name"]
+                            and u["date"] == pe["date"]
+                            for u in upcoming_events
+                        )
+                        if not is_dup:
+                            upcoming_events.append(pe)
+
+            except Exception as e:
+                logger.info(f"upcoming query error: {e}")
+                continue
+
+    return {
+        "parsed": parsed,
+        "upcoming": upcoming_events[:3],
+        "found": len(upcoming_events) > 0,
+    }
+
+
+def format_upcoming_response(result: dict) -> str:
+    """格式化未來賽程回覆"""
+    parsed = result["parsed"]
+    upcoming = result["upcoming"]
+
+    team_names = " / ".join(t["cn_name"] for t in parsed["teams"]) if parsed["teams"] else parsed.get("original", "")
+
+    if not result["found"] or not upcoming:
+        return (
+            f"📅 {team_names} 未來賽程\n\n"
+            f"😴 目前查不到 {team_names} 的下一場賽程\n"
+            f"可能原因：賽程尚未公布，或本賽季已結束\n\n"
+            f"💡 試試直接輸入隊名查詢今日比分"
+        )
+
+    sep = "═" * 24
+    lines = [sep, f"📅 {team_names} 即將出賽", sep, ""]
+
+    for e in upcoming:
+        home = e["home"]
+        away = e["away"]
+        emoji = e["emoji"]
+        pool = e.get("pool", "")
+        pool_str = f" ({pool})" if pool else ""
+
+        try:
+            dt = datetime.fromisoformat(e["date"].replace("Z", "+00:00"))
+            local = dt.astimezone(tz)
+            time_str = local.strftime("%m/%d（%a）%H:%M")
+        except:
+            time_str = "時間待定"
+
+        lines.append(f"{emoji} {away['name']} vs {home['name']}{pool_str}")
+        lines.append(f"⏰ {time_str}")
+        lines.append("")
+
+    lines.extend([sep, "📡 世界體育數據室"])
+    return "\n".join(lines)
 
 
 def get_recent_matches(teams: list, endpoints: list) -> dict:
@@ -301,3 +424,8 @@ def format_no_result(parsed: dict) -> str:
         "• 隊名查詢：洋基 紅襪\n"
         "• 運動查詢：棒球、WBC、NBA"
     )
+
+
+# 補充 logger（live_query 本身沒有 logger，補上）
+import logging
+logger = logging.getLogger(__name__)

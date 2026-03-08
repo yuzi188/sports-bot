@@ -1,10 +1,11 @@
 """
-AI 客服聊天模組 V8 - 全接管版
-AI 自行判斷用戶意圖，不需要特定指令
+AI 客服聊天模組 V9 - 上下文感知版
+修復：意圖分類器傳入對話歷史，正確理解「下場」「接下來」等追問
 """
 
 import logging
 import os
+import json
 from collections import defaultdict
 from openai import OpenAI
 
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 # 延遲初始化，避免啟動時環境變數尚未載入
 _client = None
 
+
 def _get_client():
     global _client
     if _client is None:
@@ -20,7 +22,9 @@ def _get_client():
         _client = OpenAI(api_key=api_key)
     return _client
 
-# 系統 prompt：AI 全接管，自行判斷意圖
+
+# ===== 系統 Prompt =====
+
 SYSTEM_PROMPT = """你是「世界體育數據室」的 AI 助理 🐟，負責全面接管所有用戶對話。
 
 你的個性與風格：
@@ -61,19 +65,52 @@ Bot 的主要功能（需要時可以介紹）：
 - 保持對話自然，不要每次都重複介紹所有功能
 - 商務合作請聯繫：https://t.me/OFA168Abe1"""
 
-# 對話記憶：每個用戶保留最近 10 輪對話（20 條訊息）
+# 意圖分類器的 system prompt（獨立、簡潔）
+INTENT_SYSTEM_PROMPT = """你是體育 Bot 的意圖分類器。根據【最新用戶訊息】和【對話歷史】，判斷應執行哪個動作。
+
+只回傳 JSON，格式：{"action": "動作", "query": "查詢詞"}
+
+動作選項：
+- score: 查詢特定隊伍的即時/今日比分（query=隊名）
+- upcoming: 查詢特定隊伍的下一場/未來賽程（query=隊名）
+- analyze: AI 分析特定隊伍（query=隊名）
+- live: 查看目前進行中比賽（query=""）
+- hot: 查看熱門賽事（query=""）
+- leaders: 查看排行榜（query=""）
+- today: 查看今日所有賽事總覽（query=""）
+- chat: 純聊天、問候、體育知識問答（query=""）
+
+關鍵規則：
+1. 「下場」「下一場」「接下來」「之後」「明天」「下週」「賽程」= upcoming（不是 today！）
+2. 「下場對誰」「下場幾點」「接下來打誰」= upcoming
+3. 如果用戶問「下場」但沒說隊名，從對話歷史找最近提到的隊伍作為 query
+4. 「今天怎樣」「比分多少」「現在幾比幾」= score
+5. 「你好」「謝謝」「哈哈」= chat
+6. 只有明確說「今日所有比賽」「今天有哪些賽事」才用 today
+
+範例：
+- 「日本下場對誰」→ {"action": "upcoming", "query": "日本"}
+- 「他們下場幾點打」（歷史有日本）→ {"action": "upcoming", "query": "日本"}
+- 「洋基今天怎樣」→ {"action": "score", "query": "洋基"}
+- 「下一場是什麼時候」（歷史有洋基）→ {"action": "upcoming", "query": "洋基"}
+- 「今天有哪些比賽」→ {"action": "today", "query": ""}
+- 「你好」→ {"action": "chat", "query": ""}"""
+
+
+# ===== 對話記憶 =====
+
 _conversation_history: dict = defaultdict(list)
-MAX_HISTORY = 20
+MAX_HISTORY = 20  # 每用戶最多保留的訊息數
 
 
 def get_ai_response(user_id: int, user_message: str) -> str:
     """
-    取得 AI 回應（全接管版）
-    
+    取得 AI 回應（全接管版，含對話記憶）
+
     Args:
-        user_id: Telegram 用戶 ID（用於維護對話記憶）
+        user_id: Telegram 用戶 ID
         user_message: 用戶傳送的訊息
-    
+
     Returns:
         AI 回應文字
     """
@@ -105,51 +142,59 @@ def get_ai_response(user_id: int, user_message: str) -> str:
 
 def should_use_bot_function(user_id: int, user_message: str) -> dict:
     """
-    讓 AI 判斷用戶意圖，決定要用哪個 Bot 功能還是直接聊天
-    
+    讓 AI 判斷用戶意圖，決定要用哪個 Bot 功能還是直接聊天。
+
+    V9 修復：傳入對話歷史，讓分類器能理解「下場」「他們」等指代上文的追問。
+
     Returns:
         dict: {
-            "action": "score"|"analyze"|"live"|"hot"|"leaders"|"today"|"chat",
+            "action": "score"|"upcoming"|"analyze"|"live"|"hot"|"leaders"|"today"|"chat",
             "query": "查詢關鍵字（如果有的話）"
         }
     """
     try:
+        # 取得最近 6 條對話歷史（3 輪），提供足夠上下文但不超量
+        history = _conversation_history.get(user_id, [])
+        recent_history = history[-6:] if len(history) > 6 else history
+
+        # 組合訊息：系統 prompt + 歷史 + 最新訊息
+        messages = [{"role": "system", "content": INTENT_SYSTEM_PROMPT}]
+        messages.extend(recent_history)
+        messages.append({"role": "user", "content": user_message})
+
         response = _get_client().chat.completions.create(
             model="gpt-4.1-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "你是體育 Bot 的意圖分類器。根據用戶訊息，判斷應該執行哪個動作。"
-                        "只回傳 JSON，格式：{\"action\": \"動作\", \"query\": \"查詢詞\"}\n"
-                        "動作選項：\n"
-                        "- score: 查詢特定隊伍比分（query=隊名）\n"
-                        "- analyze: AI 分析特定隊伍（query=隊名）\n"
-                        "- live: 查看進行中比賽（query=\"\"）\n"
-                        "- hot: 查看熱門賽事（query=\"\"）\n"
-                        "- leaders: 查看排行榜（query=\"\"）\n"
-                        "- today: 查看今日賽程（query=\"\"）\n"
-                        "- chat: 純聊天或無法判斷（query=\"\"）\n"
-                        "範例：用戶說「洋基今天怎樣」→ {\"action\": \"score\", \"query\": \"洋基\"}\n"
-                        "範例：用戶說「你好」→ {\"action\": \"chat\", \"query\": \"\"}"
-                    ),
-                },
-                {"role": "user", "content": user_message},
-            ],
+            messages=messages,
             max_tokens=80,
             temperature=0.1,
         )
 
-        import json
         result_text = response.choices[0].message.content.strip()
         # 清理可能的 markdown 格式
         result_text = result_text.replace("```json", "").replace("```", "").strip()
         result = json.loads(result_text)
+
+        logger.info(f"意圖判斷 [{user_id}] '{user_message}' → {result}")
         return result
 
     except Exception as e:
         logger.error(f"意圖判斷錯誤: {e}")
         return {"action": "chat", "query": ""}
+
+
+def add_to_history(user_id: int, role: str, content: str):
+    """
+    手動加入訊息到對話歷史（供 interactive_bot 在查詢後記錄上下文使用）
+
+    Args:
+        user_id: 用戶 ID
+        role: "user" 或 "assistant"
+        content: 訊息內容
+    """
+    history = _conversation_history[user_id]
+    history.append({"role": role, "content": content})
+    if len(history) > MAX_HISTORY:
+        _conversation_history[user_id] = history[-MAX_HISTORY:]
 
 
 def clear_history(user_id: int):
