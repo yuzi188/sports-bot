@@ -1,6 +1,6 @@
 """
-互動式 Telegram Bot V12 - 完整選單系統升級
-新增：主選單升級、語言設置、專屬邀請連結、客服更新
+互動式 Telegram Bot V13 - 首次私訊自動歡迎
+新增：首次私訊自動發送三則歡迎訊息（宣傳+主選單、語言選擇、遊戲連結）
 """
 
 import sys
@@ -675,12 +675,74 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
                 await reply(update, "😅 抱歉，系統暫時無法回應，請稍後再試！")
 
 
+async def send_first_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    首次私訊自動歡迎：依序發送三則訊息。
+    1. 歡迎宣傳文字 + 主選單鍵盤（MAIN_KEYBOARD）
+    2. 語言選擇 InlineKeyboard
+    3. 遊戲連結 InlineKeyboard（帶 tgid 追蹤參數）
+    發完後設定 context.user_data["welcomed"] = True，避免重複發送。
+    """
+    user_id = update.effective_user.id if update.effective_user else 0
+
+    # ── 第一則：歡迎宣傳 + 主選單鍵盤 ──
+    welcome_text = (
+        "🏆 歡迎來到 世界體育數據室！\n\n"
+        "✅ MLB / NBA / NHL / 足球 即時比分\n"
+        "✅ AI 勝率預測與比賽分析\n"
+        "✅ 直接問任何體育問題，不需要指令！\n\n"
+        f"🎮 合作娛樂平台：{GAME_URL}\n\n"
+        "立即點擊下方【🎮 遊戲】進入！"
+    )
+    await update.message.reply_text(welcome_text, reply_markup=MAIN_KEYBOARD)
+
+    # ── 第二則：語言選擇 InlineKeyboard ──
+    lang_buttons = [
+        [
+            InlineKeyboardButton(LANGUAGES["zh_tw"][0], callback_data="lang_zh_tw"),
+            InlineKeyboardButton(LANGUAGES["en"][0],    callback_data="lang_en"),
+        ],
+        [
+            InlineKeyboardButton(LANGUAGES["km"][0],    callback_data="lang_km"),
+            InlineKeyboardButton(LANGUAGES["zh_cn"][0], callback_data="lang_zh_cn"),
+        ],
+        [
+            InlineKeyboardButton(LANGUAGES["vi"][0],    callback_data="lang_vi"),
+            InlineKeyboardButton(LANGUAGES["th"][0],    callback_data="lang_th"),
+        ],
+    ]
+    await update.message.reply_text(
+        "🌐 請選擇您的語言：",
+        reply_markup=InlineKeyboardMarkup(lang_buttons),
+    )
+
+    # ── 第三則：遊戲連結 InlineKeyboard（帶 tgid 追蹤參數）──
+    game_link = f"{GAME_URL}?tgid={user_id}"
+    inline_kb = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("🎮 立即進入遊戲", url=game_link)]]
+    )
+    await update.message.reply_text(
+        "🎮 點擊下方按鈕進入遊戲平台！",
+        reply_markup=inline_kb,
+    )
+
+    # 標記已歡迎過，避免重複發送
+    context.user_data["welcomed"] = True
+    logger.info(f"[首次歡迎] 已發送給 user_id={user_id}")
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """處理私訊（含選單按鈕）"""
     if not update.message or not update.message.text:
         return
     text = update.message.text.strip()
     logger.info(f"[私訊] {text}")
+
+    # ── 首次私訊自動歡迎（只在私訊觸發，且只發一次）──
+    if not context.user_data.get("welcomed"):
+        await send_first_welcome(update, context)
+        # 歡迎完成後繼續正常處理用戶原本傳的訊息
+
     # 優先處理選單按鈕，避免被 AI 接管
     if await handle_menu_button(update, context, text):
         return
