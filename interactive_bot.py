@@ -1,6 +1,6 @@
 """
-互動式 Telegram Bot V11 - 上下文感知 + AI 全接管 + 即時詳細資料 + 娛樂城選單 + 歡迎訊息
-新增：底部固定鍵盤選單、新成員歡迎訊息、/start 優化
+互動式 Telegram Bot V12 - 完整選單系統升級
+新增：主選單升級、語言設置、專屬邀請連結、客服更新
 """
 
 import sys
@@ -16,6 +16,7 @@ from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     filters,
     ContextTypes,
 )
@@ -43,25 +44,37 @@ tz = pytz.timezone(TIMEZONE)
 GAME_URL = "http://la1111.ofa168hk.com/"
 CHANNEL_URL = "https://t.me/LA11118"
 CS_URL = "https://t.me/OFA168Abe1"
+BOT_USERNAME = "LA1111_bot"  # 邀請連結用的 Bot username
 TARGET_GROUP = "@G5ofa"
 
-# 底部固定鍵盤（私訊用）
+# ===== 主選單鍵盤（升級版） =====
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
         ["🎮 遊戲"],
-        ["💰 帳戶", "📢 官方頻道"],
-        ["👥 客服列表"],
+        ["👉 邀請好友", "🌐 語言設置"],
+        ["📢 官方頻道", "👥 客服列表"],
     ],
     resize_keyboard=True,
     is_persistent=True,
 )
 
-# 按鈕文字常數（方便比對）
-BTN_GAME = "🎮 遊戲"
-BTN_ACCOUNT = "💰 帳戶"
+# 按鈕文字常數
+BTN_GAME    = "🎮 遊戲"
+BTN_INVITE  = "👉 邀請好友"
+BTN_LANG    = "🌐 語言設置"
 BTN_CHANNEL = "📢 官方頻道"
-BTN_CS = "👥 客服列表"
-MENU_BUTTONS = {BTN_GAME, BTN_ACCOUNT, BTN_CHANNEL, BTN_CS}
+BTN_CS      = "👥 客服列表"
+MENU_BUTTONS = {BTN_GAME, BTN_INVITE, BTN_LANG, BTN_CHANNEL, BTN_CS}
+
+# ===== 語言設定 =====
+LANGUAGES = {
+    "zh_tw": ("🇹🇼 繁體中文",   "✅ 語言已設定為繁體中文"),
+    "en":    ("🇺🇸 English",       "✅ Language set to English"),
+    "km":    ("🇰🇭 ភាសាខ្មែរ",  "✅ ភាសាត្រូវបានកំណត់ជាភាសាខ្មែរ"),
+    "zh_cn": ("🇨🇳 简体中文",   "✅ 语言已设置为简体中文"),
+    "vi":    ("🇻🇳 Tiếng Việt",  "✅ Ngôn ngữ đã được đặt thành Tiếng Việt"),
+    "th":    ("🇹🇭 ภาษาไทย",  "✅ ตั้งค่าภาษาเป็นภาษาไทยแล้ว"),
+}
 
 
 # ===== 查詢判斷（保留作為 fallback） =====
@@ -436,7 +449,7 @@ async def cmd_odds(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str) -> bool:
     """
-    處理底部固定鍵盤的按鈕點擊。
+    處理主選單鍵盤的按鈕點擊。
     回傳 True 表示已處理，False 表示不是選單按鈕。
     """
     if text not in MENU_BUTTONS:
@@ -456,23 +469,79 @@ async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 reply_markup=inline_kb,
             )
 
-    elif text == BTN_ACCOUNT:
-        # 帳戶按鈕：顯示 Telegram ID
+    elif text == BTN_INVITE:
+        # 邀請好友：產生專屬邀請連結
+        invite_link = f"https://t.me/{BOT_USERNAME}?start=ref_{user_id}"
         if update.message:
             await update.message.reply_text(
-                f"💰 您的 Telegram ID：`{user_id}`",
-                parse_mode="Markdown",
+                f"🎉 你的專屬邀請連結：\n"
+                f"{invite_link}\n\n"
+                "分享給朋友，一起享受體育分析！⚽🏀⚾",
+            )
+
+    elif text == BTN_LANG:
+        # 語言設置：顯示 InlineKeyboard（2 列排列）
+        lang_buttons = [
+            [
+                InlineKeyboardButton(LANGUAGES["zh_tw"][0], callback_data="lang_zh_tw"),
+                InlineKeyboardButton(LANGUAGES["en"][0],    callback_data="lang_en"),
+            ],
+            [
+                InlineKeyboardButton(LANGUAGES["km"][0],    callback_data="lang_km"),
+                InlineKeyboardButton(LANGUAGES["zh_cn"][0], callback_data="lang_zh_cn"),
+            ],
+            [
+                InlineKeyboardButton(LANGUAGES["vi"][0],    callback_data="lang_vi"),
+                InlineKeyboardButton(LANGUAGES["th"][0],    callback_data="lang_th"),
+            ],
+        ]
+        if update.message:
+            await update.message.reply_text(
+                "🌐 請選擇您的語言：",
+                reply_markup=InlineKeyboardMarkup(lang_buttons),
             )
 
     elif text == BTN_CHANNEL:
         # 官方頻道
         if update.message:
-            await update.message.reply_text(f"📢 官方頻道：{CHANNEL_URL}")
+            await update.message.reply_text(
+                f"📢 官方頻道：{CHANNEL_URL}\n\n"
+                "訂閱頻道獲取最新體育資訊！"
+            )
 
     elif text == BTN_CS:
         # 客服列表
         if update.message:
-            await update.message.reply_text(f"👥 客服聯繫：{CS_URL}")
+            await update.message.reply_text(
+                "👥 客服列表\n\n"
+                "👸 VIP 客服：@OFA168abe\n\n"
+                "有任何問題都可以直接聯繫！"
+            )
+
+    return True
+
+
+async def handle_language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    處理語言選擇的 CallbackQuery。
+    callback_data 格式：lang_{code}，例如 lang_zh_tw、lang_en。
+    """
+    query = update.callback_query
+    await query.answer()  # 必須先 answer 消除 loading 狀態
+
+    data = query.data  # e.g. "lang_zh_tw"
+    lang_code = data.replace("lang_", "", 1)
+
+    if lang_code not in LANGUAGES:
+        await query.edit_message_text("⚠️ 不支援的語言")
+        return
+
+    # 儲存到 user_data
+    context.user_data["language"] = lang_code
+    _, confirm_msg = LANGUAGES[lang_code]
+
+    await query.edit_message_text(confirm_msg)
+    logger.info(f"[語言] user={query.from_user.id} 設定為 {lang_code}")
 
     return True
 
@@ -756,7 +825,7 @@ async def setup_commands(app: Application):
 
 
 def main():
-    logger.info("🤖 啟動智能查詢 Bot V11（娛樂城選單 + 歡迎訊息版）...")
+    logger.info("🤖 啟動智能查詢 Bot V12（完整選單系統升級版）...")
 
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -765,6 +834,9 @@ def main():
         filters.StatusUpdate.NEW_CHAT_MEMBERS,
         handle_new_member
     ))
+
+    # 語言選擇 CallbackQuery（必須在指令和訊息之前註冊）
+    app.add_handler(CallbackQueryHandler(handle_language_callback, pattern=r"^lang_"))
 
     # 指令
     app.add_handler(CommandHandler("start", cmd_start))
@@ -798,10 +870,10 @@ def main():
 
     app.post_init = setup_commands
 
-    logger.info("✅ Bot V11 已啟動，等待查詢...")
+    logger.info("✅ Bot V12 已啟動，等待查詢...")
     app.run_polling(
         drop_pending_updates=True,
-        allowed_updates=["message", "channel_post", "my_chat_member"],
+        allowed_updates=["message", "channel_post", "my_chat_member", "callback_query"],
     )
 
 
