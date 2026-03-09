@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # ══════════════════════════════════════════════
 
 # 訊息長度限制
-MAX_MESSAGE_LENGTH = 500
+MAX_MESSAGE_LENGTH = 5000
 
 # 速率限制設定
 RATE_LIMIT_PER_MINUTE  = 10    # 每分鐘最多 N 條
@@ -149,7 +149,7 @@ def check_message(user_id: int, text: str) -> SecurityCheckResult:
         return SecurityCheckResult(
             allowed=False,
             reason="too_long",
-            reply_text="⚠️ 訊息過長，請簡短描述（最多 500 字元）。",
+            reply_text="⚠️ 訊息過長，請簡短描述（最多 5000 字元）。",
         )
 
     # ── 2. Prompt Injection 過濾 ──
