@@ -30,6 +30,7 @@ def _get_client():
     取得 OpenAI 客戶端。
     OPENAI_API_KEY 未設定時回傳 None（不拋出例外），
     呼叫端需自行處理 None 的情況。
+    支援 OPENAI_BASE_URL 環境變數（Manus 代理或其他 OpenAI 相容 API）。
     """
     global _client
     if _client is None:
@@ -38,7 +39,12 @@ def _get_client():
             logger.warning("[ai_chat] OPENAI_API_KEY 未設定，AI 功能將使用 FAQ 回覆")
             return None
         try:
-            _client = OpenAI(api_key=api_key)
+            base_url = os.environ.get("OPENAI_BASE_URL")  # 支援 Manus 代理或自訂端點
+            if base_url:
+                logger.info(f"[ai_chat] 使用自訂 OpenAI base_url: {base_url}")
+                _client = OpenAI(api_key=api_key, base_url=base_url)
+            else:
+                _client = OpenAI(api_key=api_key)
         except Exception as e:
             logger.error(f"[ai_chat] OpenAI 初始化失敗: {e}")
             return None
@@ -377,6 +383,17 @@ _FAQ_DB = [
     (
         ["遊戲", "進入遊戲", "遊戲平台", "娛樂城", "平台"],
         "老闆您好，合作遊戲平台：http://la1111.ofa168kh.com/\n\n點擊下方【🎮 遊戲】按鈕即可進入！",
+    ),
+    # ── 真人娛樂 ──
+    (
+        ["真人", "真人荷官", "百家樂", "荷官", "真人百家樂", "輪盤", "骰寶", "真人娛樂", "live casino"],
+        "老闆您好，平台提供多種真人娛樂遊戲，包含：\n\n"
+        "🎲 真人百家樂（荷官現場發牌）\n"
+        "🎰 輪盤 / 骰寶 / 龍虎\n"
+        "🃏 各類牌桌遊戲\n\n"
+        "立即進入平台體驗：\n"
+        "👉 http://la1111.ofa168kh.com/\n\n"
+        "點擊下方【🎮 遊戲】按鈕即可進入！",
     ),
     # ── 上分 / 點數問題 ──
     (
