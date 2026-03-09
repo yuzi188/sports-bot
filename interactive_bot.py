@@ -50,7 +50,7 @@ from live_query import (
     get_upcoming_matches, format_upcoming_response,
 )
 from modules.game_details import get_live_game_details, format_game_details
-from smart_search import SPORT_KEYWORDS
+from smart_search import SPORT_KEYWORDS, ALIAS_INDEX
 # ── 539 彩票模組（V20）──
 from modules.lottery import (
     lottery_init_db,
