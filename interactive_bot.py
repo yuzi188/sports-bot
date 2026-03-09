@@ -267,6 +267,14 @@ async def handle_style_callback(update: Update, context: ContextTypes.DEFAULT_TY
             await query.edit_message_text("❌ 設定失敗，請稍後再試")
 
 
+async def cmd_lottery_exit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """退出 539 彩票模式，切換回體育 Bot 選單"""
+    await update.message.reply_text(
+        "👋 已退出 539 彩票模式，切換回體育 Bot 選單。",
+        reply_markup=MAIN_KEYBOARD
+    )
+
+
 # ══════════════════════════════════════════════
 #  基本指令
 # ══════════════════════════════════════════════
@@ -1375,7 +1383,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^💰查詢L幣$"),  lottery_balance_cmd))
     app.add_handler(MessageHandler(filters.Regex("^🏆排行榜$"),    lottery_rank_cmd))
     app.add_handler(MessageHandler(filters.Regex("^📖遊戲規則$"),  lottery_rules_cmd))
-    app.add_handler(MessageHandler(filters.Regex("^🔙退出彩票$"),  lottery_exit_cmd))
+    app.add_handler(MessageHandler(filters.Regex("^🔙退出彩票$"),  cmd_lottery_exit))
     app.add_handler(CallbackQueryHandler(handle_style_callback, pattern=r"^style_"))
 
     # ── 訊息處理 ──

@@ -327,8 +327,6 @@ async def lottery_rules_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def lottery_exit_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """退出彩票模式，移除底部選單"""
-    await update.message.reply_text(
-        "👋 已退出 539 彩票模式，底部選單已移除。",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    """退出彩票模式，由外部 interactive_bot.py 處理選單切換"""
+    # 此函數僅作為 handler 佔位，實際邏輯在 interactive_bot.py 中處理
+    pass
