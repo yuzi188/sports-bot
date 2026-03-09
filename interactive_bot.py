@@ -1,5 +1,4 @@
-"""
-互動式 Telegram Bot V19.1 - 全面 GPT 自然語言回覆版（群組修復）
+"""互動式 Telegram Bot V21.0 - LA1 SPORTS AI PLATFORM 全面升級版）
 
 V19.1 修復：
   - 群組訊息（ChatType.GROUPS）改綁定到 handle_group_message
@@ -484,28 +483,36 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /help")
-    await reply(update, """📖 使用說明 V20
+    await reply(update, """📖 LA1 SPORTS AI PLATFORM V21.0
 
 🔍 查詢方式：
 • 直接輸入隊名：利物浦 曼城
 • 輸入運動類型：棒球、NBA、足球
 • 問「日本下場對誰」→ AI 自動查未來賽程
 
-📊 即時查詢指令：
-• /score 隊名 → 即時比分 + 近3場戰績
+📊 即時體育數據：
+• /score 隊名 → 即時比分 + 近況 + 勝率
 • /today → 今日所有賽事總覽
 • /live → 目前進行中的比賽
 • /hot → 今日熱門焦點賽事
 • /leaders → MLB全壘打/NBA得分/足球射手榜
 • /odds 隊名 → 盤口資訊
 
-🤖 AI 分析指令：
+🤖 AI 賽事分析：
 • /football → ⚽ 今日足球 AI 分析
 • /baseball → ⚾ 今日棒球 AI 分析
 • /basketball → 🏀 今日籃球 AI 分析
 • /allanalyze → 🔥 三種運動綜合 AI 分析
 • /analyze 隊名 → AI 賽事分析預測
 • /winrate 運動 → 勝率統計面板
+
+🎯 預測遊戲 & 積分：
+• /checkin → ✅ 每日簽到領積分（連續簽到加成）
+• /predict → 🎯 今日焦點賽事預測投票
+• /myprediction → 📝 我的預測記錄
+• /rank → 🏆 積分排行榜 Top 10
+• /myscore → 📊 我的積分與戰績
+• 猜對 +10分 | 簽到 +10~30分
 
 🎰 L幣 539 彩票：
 • /539 → 查看 539 說明
@@ -518,17 +525,15 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • /lrank → L幣排行榜
 • /rules → 遊戲規則
 
-🎯 投票預測遊戲：
-• /rank → 🏆 積分排行榜 Top 10
-• /myscore → 📊 我的積分與預測戰績
-• 頻道推播賽事時自動發送投票，猜對 +10分
-
-👤 個人喜好：
+👤 個人化：
 • /myfav → 我的體育偏好總覽
 • /style → 切換詳細分析/快速比分模式
+• /insights → 即時社群趨勢洞察
 
-📡 社群洞察：
-• /insights → 即時社群趨勢（熱門度/群體預測/爆冷）
+📢 每日自動推播：
+• 10:00 今日賽事預覽 + AI 分析
+• 18:00 焦點賽事預測投票
+• 22:00 賽後復盤總結
 """)
 
 
@@ -776,13 +781,38 @@ async def cmd_style(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #  V18 新增：投票預測遊戲指令
 # ══════════════════════════════════════════════
 
+async def cmd_checkin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/checkin — 每日簽到領積分"""
+    logger.info("收到 /checkin")
+    user_id = update.effective_user.id if update.effective_user else 0
+    user = update.effective_user
+    username = f"@{user.username}" if user and user.username else ""
+    full_name = user.full_name if user else ""
+    try:
+        from modules.checkin_system import do_checkin, format_checkin_message, init_checkin_db
+        init_checkin_db()
+        result = do_checkin(user_id, username, full_name)
+        msg = format_checkin_message(result)
+        await reply_split(update, msg)
+    except Exception as e:
+        logger.error(f"checkin error: {e}", exc_info=True)
+        await reply(update, "老闆您好，簽到功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
+
+
 async def cmd_rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/rank — 積分排行榜 Top 10"""
+    """/rank — 積分排行榜 Top 10（整合簽到 + 預測積分）"""
     logger.info("收到 /rank")
     try:
-        from modules.prediction_game import get_leaderboard, format_leaderboard_message
-        leaderboard = get_leaderboard(top_n=10)
-        msg = format_leaderboard_message(leaderboard)
+        from modules.checkin_system import get_points_leaderboard, format_leaderboard, init_checkin_db
+        init_checkin_db()
+        leaderboard = get_points_leaderboard(top_n=10)
+        if leaderboard:
+            msg = format_leaderboard(leaderboard)
+        else:
+            # 嘗試舊版排行榜
+            from modules.prediction_game import get_leaderboard, format_leaderboard_message
+            leaderboard = get_leaderboard(top_n=10)
+            msg = format_leaderboard_message(leaderboard)
         await reply_split(update, msg)
     except Exception as e:
         logger.error(f"rank error: {e}", exc_info=True)
@@ -795,12 +825,85 @@ async def cmd_myscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id if update.effective_user else 0
     username = _get_username(update)
     try:
-        from modules.prediction_game import format_personal_score_message
-        msg = format_personal_score_message(user_id, username)
+        from modules.checkin_system import get_user_points_info, format_user_score, init_checkin_db
+        init_checkin_db()
+        info = get_user_points_info(user_id)
+        if info:
+            msg = format_user_score(info)
+        else:
+            from modules.prediction_game import format_personal_score_message
+            msg = format_personal_score_message(user_id, username)
         await reply_split(update, msg)
     except Exception as e:
         logger.error(f"myscore error: {e}", exc_info=True)
         await reply(update, "老闆您好，積分查詢功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
+
+
+async def cmd_predict(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/predict — 查看今日可預測的比賽"""
+    logger.info("收到 /predict")
+    try:
+        from modules.daily_analysis import fetch_all_today_games, generate_focus_matches, format_prediction_poll_text
+        all_games = fetch_all_today_games()
+        if not all_games:
+            await reply(update, "目前暫無可預測的賽事，請稍後再試！")
+            return
+        focus = generate_focus_matches(all_games)
+        if not focus:
+            await reply(update, "今日暫無即將開始的焦點賽事可供預測。")
+            return
+        for match in focus:
+            poll_text = format_prediction_poll_text(match)
+            try:
+                await update.message.reply_poll(
+                    question=f"{match['league']}：{match['away_team']} vs {match['home_team']}，誰會贏？",
+                    options=[match['away_team'], match['home_team'], "平手/其他"],
+                    is_anonymous=False,
+                )
+            except Exception as poll_err:
+                logger.error(f"發送投票失敗: {poll_err}")
+                await reply(update, poll_text)
+    except Exception as e:
+        logger.error(f"predict error: {e}", exc_info=True)
+        await reply(update, "老闆您好，預測功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
+
+
+async def cmd_myprediction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/myprediction — 查看我的預測記錄"""
+    logger.info("收到 /myprediction")
+    user_id = update.effective_user.id if update.effective_user else 0
+    username = _get_username(update)
+    try:
+        from modules.prediction_game import format_personal_score_message
+        msg = format_personal_score_message(user_id, username)
+        await reply_split(update, msg)
+    except Exception as e:
+        logger.error(f"myprediction error: {e}", exc_info=True)
+        await reply(update, "老闆您好，預測記錄查詢功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
+
+
+async def cmd_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/score [隊伍名] — 查詢隊伍即時比分 + 近況"""
+    logger.info("收到 /score")
+    user_id = update.effective_user.id if update.effective_user else 0
+    user_lang = _get_user_lang(context, user_id)
+    args = context.args
+    if not args:
+        await reply(update, "請輸入隊伍名稱，例如：/score 湖人")
+        return
+    query = " ".join(args)
+    try:
+        await handle_score_query(
+            update, query,
+            user_id=user_id,
+            original_message=f"/score {query}",
+            action="score",
+            user_lang=user_lang,
+        )
+        _record_user_query(user_id, query, "team")
+    except Exception as e:
+        logger.error(f"score cmd error: {e}", exc_info=True)
+        await reply(update, f"查詢 {query} 失敗，請稍後再試。如需協助請聯繫客服 @yu_888yu")
 
 
 async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1453,6 +1556,14 @@ def main():
     except Exception as e:
         logger.error(f"[539] 彩票資料庫初始化失敗: {e}")
 
+    # ── 初始化簽到積分資料庫（V21）──
+    try:
+        from modules.checkin_system import init_checkin_db
+        init_checkin_db()
+        logger.info("[簽到] 積分資料庫初始化完成")
+    except Exception as e:
+        logger.error(f"[簽到] 積分資料庫初始化失敗: {e}")
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     # ── 基本指令 ──
@@ -1476,13 +1587,16 @@ def main():
     app.add_handler(CommandHandler("myfav",      cmd_myfav))
     app.add_handler(CommandHandler("style",      cmd_style))
 
-    # ── 投票預測遊戲（V18）──
-    app.add_handler(CommandHandler("rank",       cmd_rank))
-    app.add_handler(CommandHandler("myscore",    cmd_myscore))
+    # ── 預測遊戲 & 積分系統（V21）──
+    app.add_handler(CommandHandler("checkin",     cmd_checkin))
+    app.add_handler(CommandHandler("rank",        cmd_rank))
+    app.add_handler(CommandHandler("myscore",     cmd_myscore))
+    app.add_handler(CommandHandler("predict",     cmd_predict))
+    app.add_handler(CommandHandler("myprediction",cmd_myprediction))
+    app.add_handler(CommandHandler("score",       cmd_score))
     app.add_handler(PollAnswerHandler(handle_poll_answer))
-
     # ── 群體行為洞察（V18）──
-    app.add_handler(CommandHandler("insights",   cmd_insights))
+    app.add_handler(CommandHandler("insights",    cmd_insights))
 
     # ── 539 彩票指令（V20.3 修復：移除未定義的 quick_cmd）──
     app.add_handler(CommandHandler("539",       lottery_info_cmd))
@@ -1528,7 +1642,7 @@ def main():
     except Exception as e:
         logger.error(f"[539] 開獎排程設定失敗: {e}")
 
-    logger.info("Bot V20 已啟動（全面 GPT 自然語言回覆 + 539 彩票整合）...")
+    logger.info("Bot V21.0 LA1 SPORTS AI PLATFORM 已啟動（全面 GPT + 簽到積分 + 預測遊戲 + AI 推播 + 539 彩票）...")
     app.run_polling(
         allowed_updates=["message", "callback_query", "poll_answer", "chat_member"],
         drop_pending_updates=True,  # 避免啟動時被舊訊息或 webhook 衝突卡住
