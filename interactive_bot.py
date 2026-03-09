@@ -257,14 +257,120 @@ async def handle_style_callback(update: Update, context: ContextTypes.DEFAULT_TY
 #  基本指令
 # ══════════════════════════════════════════════
 
+# ===== 歡迎影片設定 =====
+# 影片 file_id：由 Bot 啟動時自動上傳取得，或直接設定
+# 如果本地檔案存在，啟動時自動上傳並儲存 file_id
+WELCOME_VIDEO_PATH    = "/home/ubuntu/upload/video_AgADQx0AAlLoaVU.mp4"
+WELCOME_VIDEO_FILE_ID = None   # 由 _init_welcome_video() 填入
+
+
+def _build_welcome_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    """
+    建立歡迎頁完整 inline keyboard。
+    使用現有程式碼裡已有的所有連結。
+    """
+    game_link = f"{GAME_URL}?tgid={user_id}"
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🇹🇼 台站",   url="http://La1111.meta1788.com"),
+            InlineKeyboardButton("🇭🇰 U站",    url="http://la1111.ofa168hk.com"),
+        ],
+        [
+            InlineKeyboardButton("🇰🇭 代理入口", url="http://agent.ofa168kh.com"),
+        ],
+        [
+            InlineKeyboardButton("🆕 免費開戶註冊", url=game_link),
+        ],
+        [
+            InlineKeyboardButton("🎁 優惠領取聯絡客服", url=CS_URL),
+        ],
+        [
+            InlineKeyboardButton("🤝 商務合作",   url="https://t.me/OFA168Abe1"),
+        ],
+        [
+            InlineKeyboardButton("🎮 立即進入遲戲", url=game_link),
+        ],
+    ])
+
+
+async def _init_welcome_video(bot) -> str:
+    """
+    初始化歡迎影片。
+    如果本地檔案存在，上傳到 Telegram 取得 file_id。
+    回傳 file_id（成功）或 None（失敗）。
+    """
+    import os
+    global WELCOME_VIDEO_FILE_ID
+
+    # 如果已有 file_id，直接回傳
+    if WELCOME_VIDEO_FILE_ID:
+        return WELCOME_VIDEO_FILE_ID
+
+    # 尚未上傳，嘗試從本地上傳
+    if not os.path.exists(WELCOME_VIDEO_PATH):
+        logger.warning(f"歡迎影片檔案不存在: {WELCOME_VIDEO_PATH}")
+        return None
+
+    try:
+        logger.info(f"正在上傳歡迎影片: {WELCOME_VIDEO_PATH}")
+        # 上傳到一個臨時頻道（用 CHANNEL_URL 對應的頻道 ID）
+        # 這裡用 sendVideo 上傳到 Bot 自己（用 getMe 取 bot_id）
+        me = await bot.get_me()
+        bot_id = me.id
+        with open(WELCOME_VIDEO_PATH, "rb") as f:
+            msg = await bot.send_video(
+                chat_id=bot_id,   # 發送給 Bot 自己（取得 file_id）
+                video=f,
+                caption="歡迎影片",
+            )
+        WELCOME_VIDEO_FILE_ID = msg.video.file_id
+        logger.info(f"歡迎影片上傳成功， file_id={WELCOME_VIDEO_FILE_ID}")
+        return WELCOME_VIDEO_FILE_ID
+    except Exception as e:
+        logger.warning(f"歡迎影片上傳失敗: {e}")
+        return None
+
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /start 指令處理函數（V19.3 歡迎影片版）
+
+    流程：
+    1. 第一次進入（SQLite 判斷）：發送影片 + 完整 inline keyboard
+    2. 之後再 /start：只發普通歡迎訊息
+    """
     logger.info("收到 /start")
+
+    if not update.message:
+        if update.channel_post:
+            welcome_text = (
+                "🏆 歡迎來到 LA1 智能服務平台！\n\n"
+                "🌐 平台入口：\n"
+                "🇹🇼 台站｜La1111.meta1788.com\n"
+                "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168hk.com\n"
+                "🇰🇭 代理｜agent.ofa168kh.com"
+            )
+            await update.channel_post.reply_text(welcome_text)
+        return
+
+    user_id = update.effective_user.id if update.effective_user else 0
+
+    # ── 判斷是否為第一次進入 ──
+    is_first_time = False
+    if user_id:
+        try:
+            from modules.user_preferences import has_seen_welcome_video, mark_welcome_video_sent
+            is_first_time = not has_seen_welcome_video(user_id)
+        except Exception as e:
+            logger.warning(f"檢查歡迎影片狀態失敗: {e}")
+            is_first_time = True  # 出錯時保守，假設為第一次
+
     welcome_text = (
         "🏆 歡迎來到 LA1 智能服務平台！\n\n"
         "✅ MLB / NBA / NHL / 足球 即時比分\n"
         "✅ AI 勝率預測與比賽分析\n"
         "✅ ⚽⚾🏀 三種運動 AI 深度分析\n"
-        "✅ 🎯 投票預測遊戲 + 積分排行榜\n"
+        "✅ 🎯 投票預測遲戲 + 積分排行榜\n"
         "✅ 📊 社群趨勢洞察 + 個人喜好記憶\n"
         "✅ 直接問任何體育問題，不需要指令！\n\n"
         "🌐 平台入口：\n"
@@ -272,12 +378,51 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168hk.com\n"
         "🇰🇭 代理｜agent.ofa168kh.com\n\n"
         "🤝 商務合作：https://t.me/OFA168Abe1\n\n"
-        "🎮 點擊下方【遊戲】按鈕立即進入！"
+        "🎮 點擊下方按鈕立即進入！"
     )
-    if update.message:
+
+    if is_first_time and user_id:
+        # ★ 第一次進入：發送影片 + 完整 inline keyboard
+        welcome_kb = _build_welcome_keyboard(user_id)
+
+        # 嘗試發送影片
+        video_sent = False
+        file_id = WELCOME_VIDEO_FILE_ID
+
+        if not file_id:
+            # 嘗試上傳影片
+            file_id = await _init_welcome_video(context.bot)
+
+        if file_id:
+            try:
+                await update.message.reply_video(
+                    video=file_id,
+                    caption=welcome_text,
+                    reply_markup=welcome_kb,
+                )
+                video_sent = True
+                logger.info(f"[歡迎影片] 已發送影片給 user_id={user_id}")
+            except Exception as e:
+                logger.warning(f"[歡迎影片] 發送影片失敗: {e}")
+
+        if not video_sent:
+            # 影片發送失敗，改發文字 + 按鈕
+            await update.message.reply_text(welcome_text, reply_markup=welcome_kb)
+            logger.info(f"[歡迎影片] 影片失敗，改發文字給 user_id={user_id}")
+
+        # 標記已發送，避免重複
+        try:
+            from modules.user_preferences import mark_welcome_video_sent
+            mark_welcome_video_sent(user_id)
+        except Exception as e:
+            logger.warning(f"標記歡迎影片已發送失敗: {e}")
+
+        # 發送主選單鍵盤
+        await update.message.reply_text("👇 點擊下方選單開始使用！", reply_markup=MAIN_KEYBOARD)
+
+    else:
+        # 非第一次：只發普通歡迎訊息
         await update.message.reply_text(welcome_text, reply_markup=MAIN_KEYBOARD)
-    elif update.channel_post:
-        await update.channel_post.reply_text(welcome_text)
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):

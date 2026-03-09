@@ -54,11 +54,12 @@ def init_db():
         conn.executescript("""
             -- 用戶基本設定
             CREATE TABLE IF NOT EXISTS user_settings (
-                user_id     INTEGER PRIMARY KEY,
-                language    TEXT    DEFAULT 'zh_tw',
-                style       TEXT    DEFAULT 'auto',
-                created_at  TEXT    DEFAULT (datetime('now')),
-                updated_at  TEXT    DEFAULT (datetime('now'))
+                user_id              INTEGER PRIMARY KEY,
+                language             TEXT    DEFAULT 'zh_tw',
+                style                TEXT    DEFAULT 'auto',
+                welcome_video_sent   INTEGER DEFAULT 0,   -- 1=已發送歡迎影片, 0=尚未發送
+                created_at           TEXT    DEFAULT (datetime('now')),
+                updated_at           TEXT    DEFAULT (datetime('now'))
             );
 
             -- 查詢歷史（用於學習喜好）
@@ -105,6 +106,17 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_favorite_sports_user
                 ON favorite_sports(user_id, query_count DESC);
         """)
+    # V19.3 遷移：若舊表缺少 welcome_video_sent 欄位，自動補加
+    # 用獨立 try/except 避免欄位已存在時報錯
+    try:
+        with _get_conn() as conn:
+            conn.execute(
+                "ALTER TABLE user_settings ADD COLUMN welcome_video_sent INTEGER DEFAULT 0"
+            )
+        logger.info("已新增 welcome_video_sent 欄位")
+    except Exception:
+        pass  # 欄位已存在，忽略錯誤
+
     logger.info(f"用戶喜好資料庫已初始化：{_DB_PATH}")
 
 
@@ -166,9 +178,55 @@ def set_user_style(user_id: int, style: str):
     logger.info(f"用戶 {user_id} 互動習慣設定為 {style}")
 
 
-# ══════════════════════════════════════════════
+# ══════════════════════════════
+#  歡迎影片發送狀態（V19.3 新增）
+# ══════════════════════════════
+
+def has_seen_welcome_video(user_id: int) -> bool:
+    """
+    檢查用戶是否已收到歡迎影片。
+    用於 /start 判斷是否為第一次進入。
+
+    Returns:
+        True  = 已發送過影片（不重複發送）
+        False = 尚未發送（應發送影片）
+    """
+    try:
+        with _get_conn() as conn:
+            row = conn.execute(
+                "SELECT welcome_video_sent FROM user_settings WHERE user_id = ?",
+                (user_id,)
+            ).fetchone()
+            if row is None:
+                return False  # 新用戶，尚未建立記錄
+            return bool(row["welcome_video_sent"])
+    except Exception as e:
+        logger.warning(f"has_seen_welcome_video 查詢失敗: {e}")
+        return False  # 出錯時保守，假設尚未發送
+
+
+def mark_welcome_video_sent(user_id: int):
+    """
+    標記用戶已收到歡迎影片。
+    如果用戶不在資料庫中，同時建立記錄。
+    """
+    try:
+        with _get_conn() as conn:
+            conn.execute("""
+                INSERT INTO user_settings (user_id, welcome_video_sent, updated_at)
+                VALUES (?, 1, datetime('now'))
+                ON CONFLICT(user_id) DO UPDATE SET
+                    welcome_video_sent = 1,
+                    updated_at = datetime('now')
+            """, (user_id,))
+        logger.info(f"[歡迎影片] 已標記 user_id={user_id} 為已發送")
+    except Exception as e:
+        logger.warning(f"mark_welcome_video_sent 失敗: {e}")
+
+
+# ══════════════════════════════
 #  查詢歷史記錄（自動學習）
-# ══════════════════════════════════════════════
+# ═══════════════════════════════════════════════
 
 def record_query(user_id: int, query_type: str, query_value: str, sport: str = ""):
     """
