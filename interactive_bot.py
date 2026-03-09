@@ -135,6 +135,18 @@ async def reply_split(update: Update, text: str):
         await reply(update, p)
 
 
+def _append_cs_contact(text: str) -> str:
+    """
+    若 GPT 回覆中提到「客服/人工/轉接」等字眼，
+    且回覆中尚未包含 @yu_888yu，則自動附上客服聯絡方式。
+    """
+    cs_trigger_words = ["客服", "人工", "轉接", "聯繫", "聯絡", "contact", "support"]
+    cs_contact = "\n\n👑 客服聯絡：@yu_888yu"
+    if "@yu_888yu" not in text and any(w in text for w in cs_trigger_words):
+        return text + cs_contact
+    return text
+
+
 def is_query(text: str) -> bool:
     """判斷是否為比分查詢（隊名或運動類型）"""
     text_lower = text.lower()
@@ -404,14 +416,17 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             is_first_time = True  # 出錯時保守，假設為第一次
 
     welcome_text = (
-        "🏆 歡迎來到 LA1 智能服務平台！\n\n"
+        "🤖 老闆您好 👋\n"
+        "歡迎來到 LA1 智能客服\n"
+        "請問需要什麼協助？\n\n"
+        "例如可以詢問：\n"
+        "• 有什麼遊戲\n"
+        "• 如何註冊\n"
+        "• 如何儲值\n"
+        "• 今日賽事\n\n"
         "✅ MLB / NBA / NHL / 足球 即時比分\n"
         "✅ AI 勝率預測與比賽分析\n"
-        "✅ ⚽⚾🏀 三種運動 AI 深度分析\n"
-        "✅ 🎯 投票預測遊戲 + 積分排行榜\n"
-        "✅ 🎰 L幣 539 彩票遊戲\n"
-        "✅ 📊 社群趨勢洞察 + 個人喜好記憶\n"
-        "✅ 直接問任何體育問題，不需要指令！\n\n"
+        "✅ 🎰 L幣 539 彩票遊戲\n\n"
         "🌐 平台入口：\n"
         "🇹🇼 台站｜La1111.meta1788.com\n"
         "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168hk.com\n"
@@ -965,6 +980,7 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
                 return
             # FAQ 未命中，走 GPT 客服助理
             ai_reply = get_ai_response(user_id, text, user_lang=user_lang)
+            ai_reply = _append_cs_contact(ai_reply)
             await reply_split(update, ai_reply)
             return
 
@@ -1086,6 +1102,7 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
             else:
                 # action == "chat" → 走 GPT 客服助理
                 ai_reply = get_ai_response(user_id, text, user_lang=user_lang)
+                ai_reply = _append_cs_contact(ai_reply)
                 await reply_split(update, ai_reply)
 
         # ── V18：查詢後主動推薦（僅私訊，避免頻道刷屏）──
@@ -1104,6 +1121,7 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
             try:
                 from modules.ai_chat import get_ai_response
                 ai_reply = get_ai_response(user_id, text, user_lang=user_lang)
+                ai_reply = _append_cs_contact(ai_reply)
                 await reply_split(update, ai_reply)
             except Exception as e2:
                 logger.error(f"AI fallback error: {e2}", exc_info=True)
