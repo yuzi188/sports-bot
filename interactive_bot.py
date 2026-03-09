@@ -51,8 +51,22 @@ from live_query import (
 )
 from modules.game_details import get_live_game_details, format_game_details
 from smart_search import SPORT_KEYWORDS
-from team_db import ALIAS_INDEX
-
+# ── 539 彩票模組（V20）──
+from modules.lottery import (
+    lottery_init_db,
+    lottery_info_cmd,
+    bet_ui_cmd,
+    lottery_balance_cmd,
+    lottery_daily_cmd,
+    lottery_history_cmd,
+    lottery_result_cmd,
+    lottery_rank_cmd,
+    lottery_rules_cmd,
+    lottery_exit_cmd,
+    lottery_callback_handler,
+    claim_chat_bonus,
+    lottery_settings,
+)
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -386,7 +400,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ MLB / NBA / NHL / 足球 即時比分\n"
         "✅ AI 勝率預測與比賽分析\n"
         "✅ ⚽⚾🏀 三種運動 AI 深度分析\n"
-        "✅ 🎯 投票預測遲戲 + 積分排行榜\n"
+        "✅ 🎯 投票預測遊戲 + 積分排行榜\n"
+        "✅ 🎰 L幣 539 彩票遊戲\n"
         "✅ 📊 社群趨勢洞察 + 個人喜好記憶\n"
         "✅ 直接問任何體育問題，不需要指令！\n\n"
         "🌐 平台入口：\n"
@@ -394,6 +409,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168hk.com\n"
         "🇰🇭 代理｜agent.ofa168kh.com\n\n"
         "🤝 商務合作：https://t.me/OFA168Abe1\n\n"
+        "🎰 輸入 /539 開始 L幣 539 彩票！\n\n"
         "🎮 點擊下方按鈕立即進入！"
     )
 
@@ -445,7 +461,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("收到 /help")
-    await reply(update, """📖 使用說明 V18
+    await reply(update, """📖 使用說明 V20
 
 🔍 查詢方式：
 • 直接輸入隊名：利物浦 曼城
@@ -467,6 +483,17 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • /allanalyze → 🔥 三種運動綜合 AI 分析
 • /analyze 隊名 → AI 賽事分析預測
 • /winrate 運動 → 勝率統計面板
+
+🎰 L幣 539 彩票：
+• /539 → 查看 539 說明
+• /539 03 08 12 25 37 → 下注 5 個號碼
+• /quick → 快速隨機下注
+• /balance → 查看 L幣餘額
+• /daily → 每日簽到（+20 L幣）
+• /history → 我的投注紀錄
+• /result → 今日開獎結果
+• /lrank → L幣排行榜
+• /rules → 遊戲規則
 
 🎯 投票預測遊戲：
 • /rank → 🏆 積分排行榜 Top 10
@@ -1116,6 +1143,25 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception as e:
             logger.warning(f"[每日歡迎] 判斷失敗: {e}")
 
+    # ── 群組說話 L幣獎勵（V20）──
+    if user_id:
+        try:
+            user = update.effective_user
+            username = user.username if user else None
+            full_name = user.full_name if user else "Unknown"
+            bonus_result = claim_chat_bonus(
+                user_id=user_id,
+                username=username,
+                full_name=full_name,
+                amount=lottery_settings.chat_bonus,
+                starting_coins=lottery_settings.starting_coins,
+                now_iso=datetime.now(pytz.timezone(TIMEZONE)).isoformat(),
+            )
+            if bonus_result is not None:
+                logger.info(f"[L幣] user_id={user_id} 群組發言獎勵 +{lottery_settings.chat_bonus}，餘額={bonus_result}")
+        except Exception as e:
+            logger.warning(f"[L幣] 群組發言獎勵失敗: {e}")
+
     if await handle_menu_button(update, context, text):
         return
     await dispatch_message(update, context, text)
@@ -1274,6 +1320,13 @@ def main():
         logger.error("未設定 BOT_TOKEN 環境變數")
         return
 
+    # ── 初始化 539 彩票資料庫（V20）──
+    try:
+        lottery_init_db()
+        logger.info("[539] 彩票資料庫初始化完成")
+    except Exception as e:
+        logger.error(f"[539] 彩票資料庫初始化失敗: {e}")
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     # ── 基本指令 ──
@@ -1305,8 +1358,27 @@ def main():
     # ── 群體行為洞察（V18）──
     app.add_handler(CommandHandler("insights",   cmd_insights))
 
-    # ── Callback 處理 ──
-    app.add_handler(CallbackQueryHandler(handle_lang_callback,  pattern=r"^lang_"))
+    # ── 539 彩票指令（V20）──
+    app.add_handler(CommandHandler("539",       lottery_info_cmd))
+    app.add_handler(CommandHandler("quick",     quick_cmd))
+    app.add_handler(CommandHandler("balance",   lottery_balance_cmd))
+    # ── 539 彩票指令（V20）──
+    app.add_handler(CommandHandler("539",       lottery_info_cmd))
+    app.add_handler(CommandHandler("balance",   lottery_balance_cmd))
+    app.add_handler(CommandHandler("daily",     lottery_daily_cmd))
+    app.add_handler(CommandHandler("history",   lottery_history_cmd))
+    app.add_handler(CommandHandler("result",    lottery_result_cmd))
+    app.add_handler(CommandHandler("lrank",     lottery_rank_cmd))
+    app.add_handler(CommandHandler("rules",     lottery_rules_cmd))
+
+    # ── 539 底部選單按鈕處理 ──
+    app.add_handler(CallbackQueryHandler(lottery_callback_handler, pattern=r"^lot_"))
+    app.add_handler(MessageHandler(filters.Regex("^🎱下注$"),      bet_ui_cmd))
+    app.add_handler(MessageHandler(filters.Regex("^📋查詢下注$"),  lottery_history_cmd))
+    app.add_handler(MessageHandler(filters.Regex("^💰查詢L幣$"),  lottery_balance_cmd))
+    app.add_handler(MessageHandler(filters.Regex("^🏆排行榜$"),    lottery_rank_cmd))
+    app.add_handler(MessageHandler(filters.Regex("^📖遊戲規則$"),  lottery_rules_cmd))
+    app.add_handler(MessageHandler(filters.Regex("^🔙退出彩票$"),  lottery_exit_cmd))
     app.add_handler(CallbackQueryHandler(handle_style_callback, pattern=r"^style_"))
 
     # ── 訊息處理 ──
@@ -1314,7 +1386,26 @@ def main():
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, handle_message))
     app.add_handler(MessageHandler(filters.ChatType.GROUPS  & filters.TEXT, handle_group_message))
 
-    logger.info("Bot V19 已啟動（全面 GPT 自然語言回覆 + 群組修復）...")
+    # ── 539 每日 20:30 開獎排程（V20）──
+    try:
+        from modules.lottery.scheduler_tasks import draw_job
+        from datetime import time as dt_time
+        jq = app.job_queue
+        tz_obj = pytz.timezone(TIMEZONE)
+        jq.run_daily(
+            draw_job,
+            time=dt_time(
+                hour=lottery_settings.draw_hour,
+                minute=lottery_settings.draw_minute,
+                tzinfo=tz_obj,
+            ),
+            name="lottery_daily_draw",
+        )
+        logger.info(f"[539] 開獎排程已設定：每日 {lottery_settings.draw_hour:02d}:{lottery_settings.draw_minute:02d}")
+    except Exception as e:
+        logger.error(f"[539] 開獎排程設定失敗: {e}")
+
+    logger.info("Bot V20 已啟動（全面 GPT 自然語言回覆 + 539 彩票整合）...")
     app.run_polling(allowed_updates=["message", "callback_query", "poll_answer", "chat_member"])
 
 
