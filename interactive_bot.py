@@ -1358,12 +1358,9 @@ def main():
     # ── 群體行為洞察（V18）──
     app.add_handler(CommandHandler("insights",   cmd_insights))
 
-    # ── 539 彩票指令（V20）──
+    # ── 539 彩票指令（V20.3 修復：移除未定義的 quick_cmd）──
     app.add_handler(CommandHandler("539",       lottery_info_cmd))
-    app.add_handler(CommandHandler("quick",     quick_cmd))
-    app.add_handler(CommandHandler("balance",   lottery_balance_cmd))
-    # ── 539 彩票指令（V20）──
-    app.add_handler(CommandHandler("539",       lottery_info_cmd))
+    app.add_handler(CommandHandler("quick",     bet_ui_cmd))   # /quick = 快速下注 UI
     app.add_handler(CommandHandler("balance",   lottery_balance_cmd))
     app.add_handler(CommandHandler("daily",     lottery_daily_cmd))
     app.add_handler(CommandHandler("history",   lottery_history_cmd))
