@@ -1508,7 +1508,10 @@ def main():
         logger.error(f"[539] 開獎排程設定失敗: {e}")
 
     logger.info("Bot V20 已啟動（全面 GPT 自然語言回覆 + 539 彩票整合）...")
-    app.run_polling(allowed_updates=["message", "callback_query", "poll_answer", "chat_member"])
+    app.run_polling(
+        allowed_updates=["message", "callback_query", "poll_answer", "chat_member"],
+        drop_pending_updates=True,  # 避免啟動時被舊訊息或 webhook 衝突卡住
+    )
 
 
 if __name__ == "__main__":
