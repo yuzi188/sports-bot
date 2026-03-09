@@ -26,12 +26,22 @@ _client = None
 
 
 def _get_client():
+    """
+    取得 OpenAI 客戶端。
+    OPENAI_API_KEY 未設定時回傳 None（不拋出例外），
+    呼叫端需自行處理 None 的情況。
+    """
     global _client
     if _client is None:
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY 環境變數未設定")
-        _client = OpenAI(api_key=api_key)
+            logger.warning("[ai_chat] OPENAI_API_KEY 未設定，AI 功能將使用 FAQ 回覆")
+            return None
+        try:
+            _client = OpenAI(api_key=api_key)
+        except Exception as e:
+            logger.error(f"[ai_chat] OpenAI 初始化失敗: {e}")
+            return None
     return _client
 
 
@@ -588,7 +598,13 @@ def get_ai_response(user_id: int, user_message: str, user_lang: str = "zh_tw") -
 
         messages = [{"role": "system", "content": dynamic_system_prompt}] + list(history)
 
-        response = _get_client().chat.completions.create(
+        client = _get_client()
+        if client is None:
+            cs_guide = _get_cs_guide(user_lang)
+            if user_lang == "en":
+                return f"Hello Boss! Please feel free to ask me anything. For account or game issues, contact @yu_888yu\n\n{cs_guide}"
+            return f"老闆您好，請問有什麼可以幫您的？如有帳號或遊戲問題，歡迎聯繫客服 @yu_888yu\n\n{cs_guide}"
+        response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=messages,
             max_tokens=500,
@@ -689,7 +705,10 @@ def generate_sports_reply(
 - 總長度 150-400 字"""
 
     try:
-        response = _get_client().chat.completions.create(
+        client = _get_client()
+        if client is None:
+            return raw_data
+        response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": SPORTS_REPLY_SYSTEM_PROMPT + f"\n\n【語言指示】{lang_instruction}"},
@@ -774,7 +793,11 @@ def should_use_bot_function(user_id: int, user_message: str) -> dict:
         messages.extend(recent_history)
         messages.append({"role": "user", "content": user_message})
 
-        response = _get_client().chat.completions.create(
+        client = _get_client()
+        if client is None:
+            # OPENAI_API_KEY 未設定時，預設回傳 chat（讓 FAQ 或友好訊息處理）
+            return {"action": "chat", "query": ""}
+        response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=messages,
             max_tokens=100,
