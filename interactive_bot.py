@@ -1,5 +1,10 @@
 """
-互動式 Telegram Bot V19 - 全面 GPT 自然語言回覆版
+互動式 Telegram Bot V19.1 - 全面 GPT 自然語言回覆版（群組修復）
+
+V19.1 修復：
+  - 群組訊息（ChatType.GROUPS）改綁定到 handle_group_message
+    原本錯誤綁定到 handle_channel_post，導致群組走舊路徑，沒有 GPT 整理
+  - handle_channel_post 的體育查詢補上 user_id + user_lang，確保 GPT 整理
 
 V19 新增：
   1. 全面 GPT 自然語言回覆架構
@@ -954,9 +959,17 @@ async def handle_channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE
         await reply(update, random.choice(humor_replies))
         return
 
-    # ── 3. 正常體育查詢 ──
+    # ── 3. 正常體育查詢（頻道留言走 dispatch_message，確保 GPT 整理）──
+    user_id = update.effective_user.id if update.effective_user else 0
+    user_lang_ch = _get_user_lang(context, user_id)
     if is_query(text):
-        await handle_score_query(update, text)
+        await handle_score_query(
+            update, text,
+            user_id=user_id,
+            original_message=text,
+            action="score",
+            user_lang=user_lang_ch,
+        )
     else:
         import random
         humor_chat = [
@@ -1098,9 +1111,9 @@ def main():
     # ── 訊息處理 ──
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, handle_message))
-    app.add_handler(MessageHandler(filters.ChatType.GROUPS  & filters.TEXT, handle_channel_post))
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS  & filters.TEXT, handle_group_message))
 
-    logger.info("Bot V18 已啟動（用戶喜好記憶 + 投票預測遊戲 + 群體行為分析）...")
+    logger.info("Bot V19 已啟動（全面 GPT 自然語言回覆 + 群組修復）...")
     app.run_polling(allowed_updates=["message", "callback_query", "poll_answer", "chat_member"])
 
 
