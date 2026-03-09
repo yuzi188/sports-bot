@@ -1,0 +1,105 @@
+{
+  "items": [
+    {
+      "intent": "register",
+      "keywords": [
+        "註冊",
+        "開戶",
+        "如何註冊",
+        "如何開戶",
+        "我要註冊",
+        "加入"
+      ],
+      "answer": "老闆您好 👋\\n\\n請使用以下入口註冊：\\n\\n🇹🇼 台站\\n{GAME_URL_TW}\\n\\n🌏 U站（香港 / 馬來 / 澳門 / 越南）\\n{GAME_URL_U}\\n\\n如需協助請聯繫客服：{HUMAN_SUPPORT}"
+    },
+    {
+      "intent": "deposit",
+      "keywords": [
+        "儲值",
+        "充值",
+        "上分",
+        "入金",
+        "存款"
+      ],
+      "answer": "老闆您好 👋\\n\\n儲值 / 上分問題請聯繫客服協助處理：\\n\\n👑 客服：{HUMAN_SUPPORT}"
+    },
+    {
+      "intent": "withdraw",
+      "keywords": [
+        "提款",
+        "提現",
+        "託售",
+        "託售點數",
+        "出金"
+      ],
+      "answer": "老闆您好 👋\\n\\n提款 / 託售點數相關問題請聯繫客服協助處理：\\n\\n👑 客服：{HUMAN_SUPPORT}"
+    },
+    {
+      "intent": "cooperation",
+      "keywords": [
+        "代理",
+        "合作",
+        "商務",
+        "加盟",
+        "招商",
+        "廠商"
+      ],
+      "answer": "老闆您好 👋\\n\\n商務合作 / 代理合作請聯繫：\\n\\n🤝 {BUSINESS_CONTACT}"
+    },
+    {
+      "intent": "games",
+      "keywords": [
+        "遊戲",
+        "有什麼遊戲",
+        "可以玩什麼",
+        "遊戲種類",
+        "遊戲推薦"
+      ],
+      "answer": "老闆您好 👋\\n\\n平台提供多種熱門遊戲：\\n\\n🎰 電子遊戲\\n⚽ 體育博彩\\n🎲 真人娛樂\\n🃏 棋牌遊戲\\n\\n入口如下：\\n🇹🇼 台站：{GAME_URL_TW}\\n🌏 U站：{GAME_URL_U}"
+    },
+    {
+      "intent": "promotion",
+      "keywords": [
+        "優惠",
+        "活動",
+        "首儲",
+        "紅利",
+        "促銷",
+        "有優惠嗎"
+      ],
+      "answer": "老闆您好 👋\\n\\n目前平台活動：\\n\\n🔥 首儲1000送1000（限時）\\n\\n如需了解活動詳情，請聯繫客服：{HUMAN_SUPPORT}"
+    },
+    {
+      "intent": "support",
+      "keywords": [
+        "客服",
+        "真人客服",
+        "找客服",
+        "聯繫客服",
+        "在嗎"
+      ],
+      "answer": "老闆您好 👋\\n\\n真人客服聯繫方式：\\n\\n👑 {HUMAN_SUPPORT}"
+    },
+    {
+      "intent": "app",
+      "keywords": [
+        "app",
+        "下載",
+        "要下載嗎"
+      ],
+      "answer": "老闆您好 👋\\n\\n平台目前以網頁方式使用，無需下載 APP，直接開啟連結即可進入。\\n\\n🇹🇼 台站：{GAME_URL_TW}\\n🌏 U站：{GAME_URL_U}"
+    },
+    {
+      "intent": "sports",
+      "keywords": [
+        "今天有什麼比賽",
+        "今日賽事",
+        "nba",
+        "足球",
+        "比分",
+        "體育分析"
+      ],
+      "answer": "老闆您好 👋\\n\\n您可以直接詢問例如：\\n• 今天 NBA 有什麼比賽\\n• 目前進行中的賽事有哪些\\n• 今日足球焦點\\n\\n系統會自動提供 AI 體育分析。"
+    }
+  ]
+}
