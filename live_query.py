@@ -17,7 +17,13 @@ logger = logging.getLogger(__name__)
 
 
 def search_live_scores(query: str) -> dict:
-    """智能搜尋即時比分"""
+    """
+    智能搜尋即時比分
+
+    V2.1 修復：
+    - 雙隊查詢今日無結果時，自動往前後各 3 天搜尋該場對戰
+    - 找到即回傳，不會誤匹配其他隊伍的比賽
+    """
     parsed = smart_parse(query)
     teams = parsed["teams"]
     endpoints = parsed["endpoints"]
@@ -27,25 +33,42 @@ def search_live_scores(query: str) -> dict:
         return {"parsed": parsed, "events": [], "recent_history": {}}
 
     matched_events = []
+    today = datetime.now(tz)
+    today_str = today.strftime("%Y%m%d")
 
     for sport, league, emoji in endpoints:
         try:
-            url = f"{ESPN_BASE}/{sport}/{league}/scoreboard"
-            resp = requests.get(url, timeout=10)
-            if resp.status_code != 200:
-                continue
-            data = resp.json()
-            events = data.get("events", [])
+            # ★ V2.1 修復：同時查詢「無日期」和「今日日期」兩個端點
+            # ESPN scoreboard 無日期版本不一定包含當天所有比賽
+            urls_to_try = [
+                f"{ESPN_BASE}/{sport}/{league}/scoreboard",
+                f"{ESPN_BASE}/{sport}/{league}/scoreboard?dates={today_str}",
+            ]
+            all_events = []
+            seen_ids = set()
+            for url in urls_to_try:
+                try:
+                    resp = requests.get(url, timeout=10)
+                    if resp.status_code != 200:
+                        continue
+                    data = resp.json()
+                    for ev in data.get("events", []):
+                        eid = ev.get("id", "")
+                        if eid not in seen_ids:
+                            seen_ids.add(eid)
+                            all_events.append(ev)
+                except:
+                    continue
 
             if is_sport_only and not teams:
-                for event in events:
+                for event in all_events:
                     pe = parse_event(event, emoji)
                     if pe:
                         pe["sport"] = sport
                         pe["league"] = league
                         matched_events.append(pe)
             else:
-                for event in events:
+                for event in all_events:
                     if match_event_smart(event, teams):
                         pe = parse_event(event, emoji)
                         if pe:
@@ -54,6 +77,36 @@ def search_live_scores(query: str) -> dict:
                             matched_events.append(pe)
         except:
             continue
+
+    # ── V2.1：雙隊查詢今日無結果時，自動往前後各 3 天搜尋 ──
+    if not matched_events and len(teams) >= 2 and not is_sport_only:
+        today = datetime.now(tz)
+        # 往後 3 天 + 往前 3 天（從昨天開始，排除今天已查過）
+        offsets = [-1, -2, -3, 1, 2, 3]
+        for day_offset in offsets:
+            if matched_events:
+                break
+            date = today + timedelta(days=day_offset)
+            date_str = date.strftime("%Y%m%d")
+            for sport, league, emoji in endpoints:
+                try:
+                    url = f"{ESPN_BASE}/{sport}/{league}/scoreboard?dates={date_str}"
+                    resp = requests.get(url, timeout=10)
+                    if resp.status_code != 200:
+                        continue
+                    data = resp.json()
+                    events = data.get("events", [])
+                    for event in events:
+                        if match_event_smart(event, teams):
+                            pe = parse_event(event, emoji)
+                            if pe:
+                                pe["sport"] = sport
+                                pe["league"] = league
+                                # 標記是否為非今日資料
+                                pe["date_offset"] = day_offset
+                                matched_events.append(pe)
+                except:
+                    continue
 
     # 近3場歷史比分
     recent_history = {}
@@ -447,6 +500,17 @@ def format_no_result(parsed: dict) -> str:
     """格式化無結果"""
     if parsed["teams"]:
         team_names = " / ".join(t["cn_name"] for t in parsed["teams"])
+        if len(parsed["teams"]) >= 2:
+            # 雙隊查詢無結果：提示可能原因
+            names_list = "、".join(t["cn_name"] for t in parsed["teams"])
+            return (
+                f"🔍 查詢：{team_names}\n\n"
+                f"😴 今日沒有找到 {names_list} 的對戰\n\n"
+                f"💡 可能原因：\n"
+                f"• 這場比賽不在今日賽程（可能已結束或尚未開打）\n"
+                f"• 試試單獨查詢其中一隊：{parsed['teams'][0]['cn_name']}\n"
+                f"• 或查詢賽程：下場 {names_list} 的比賽"
+            )
         return (
             f"🔍 查詢：{team_names}\n\n"
             f"😴 今日沒有找到相關比賽\n\n"

@@ -323,10 +323,36 @@ def determine_endpoints(teams: list, sport_filter: str = None) -> list:
     return ALL_ENDPOINTS
 
 
+def _team_in_event(team: dict, event_team_names: set) -> bool:
+    """
+    檢查單支隊伍是否在賽事中（供 match_event_smart 呼叫）
+    支援英文全名、暱稱、部分匹配
+    """
+    en_name = team["en_name"].lower()
+    # 方法 1: 英文全名完全匹配
+    if en_name in event_team_names:
+        return True
+    # 方法 2: 英文全名的最後一個詞（暱稱）匹配 shortDisplayName
+    short_name = en_name.split()[-1] if " " in en_name else en_name
+    if len(short_name) > 3 and short_name in event_team_names:
+        return True
+    # 方法 3: event 的名稱包含隊伍全名（或反之）
+    for etn in event_team_names:
+        if len(en_name) > 4 and en_name in etn:
+            return True
+        if len(etn) > 4 and etn in en_name:
+            return True
+    return False
+
+
 def match_event_smart(event: dict, teams: list) -> bool:
     """
     智能匹配：用 displayName 和 shortDisplayName 匹配
-    只匹配查詢中的隊伍，不會誤匹配
+
+    V2.1 修復：
+    - 查詢 1 支隊伍時：賽事包含該隊即匹配（OR 邏輯）
+    - 查詢 2 支隊伍時：賽事必須同時包含兩隊（AND 邏輯）
+      → 防止「韓國 + 澳洲」匹配到「日本 vs 澳洲」
     """
     competitions = event.get("competitions", [])
     if not competitions:
@@ -342,24 +368,12 @@ def match_event_smart(event: dict, teams: list) -> bool:
             if val:
                 event_team_names.add(val.lower())
 
-    # 對每個查詢的隊伍，檢查是否在賽事中
-    for t in teams:
-        en_name = t["en_name"].lower()
-        # 方法 1: 英文全名完全匹配
-        if en_name in event_team_names:
-            return True
-        # 方法 2: 英文全名的最後一個詞（暱稱）匹配 shortDisplayName
-        short_name = en_name.split()[-1] if " " in en_name else en_name
-        if len(short_name) > 3 and short_name in event_team_names:
-            return True
-        # 方法 3: event 的名稱包含隊伍全名
-        for etn in event_team_names:
-            if len(en_name) > 4 and en_name in etn:
-                return True
-            if len(etn) > 4 and etn in en_name:
-                return True
-
-    return False
+    if len(teams) >= 2:
+        # ★ 雙隊查詢：AND 邏輯 — 賽事必須同時包含所有查詢隊伍
+        return all(_team_in_event(t, event_team_names) for t in teams)
+    else:
+        # 單隊查詢：OR 邏輯 — 賽事包含任一查詢隊伍即匹配
+        return any(_team_in_event(t, event_team_names) for t in teams)
 
 
 def translate_name(en_display_name: str) -> str:
