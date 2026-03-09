@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 # 延遲初始化，避免啟動時環境變數尚未載入
 _client = None
+_client_init_failed = False  # 追蹤初始化是否失敗，允許重試
 
 
 def _get_client():
@@ -31,24 +32,29 @@ def _get_client():
     OPENAI_API_KEY 未設定時回傳 None（不拋出例外），
     呼叫端需自行處理 None 的情況。
     支援 OPENAI_BASE_URL 環境變數（Manus 代理或其他 OpenAI 相容 API）。
+    V21.1 修復：初始化失敗時不永久快取 None，允許後續重試。
     """
-    global _client
-    if _client is None:
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            logger.warning("[ai_chat] OPENAI_API_KEY 未設定，AI 功能將使用 FAQ 回覆")
-            return None
-        try:
-            base_url = os.environ.get("OPENAI_BASE_URL")  # 支援 Manus 代理或自訂端點
-            if base_url:
-                logger.info(f"[ai_chat] 使用自訂 OpenAI base_url: {base_url}")
-                _client = OpenAI(api_key=api_key, base_url=base_url)
-            else:
-                _client = OpenAI(api_key=api_key)
-        except Exception as e:
-            logger.error(f"[ai_chat] OpenAI 初始化失敗: {e}")
-            return None
-    return _client
+    global _client, _client_init_failed
+    if _client is not None:
+        return _client
+    # 每次呼叫都重新嘗試初始化（不快取失敗狀態）
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        logger.warning("[ai_chat] OPENAI_API_KEY 未設定，AI 功能將使用 FAQ 回覆")
+        return None
+    try:
+        base_url = os.environ.get("OPENAI_BASE_URL")  # 支援 Manus 代理或自訂端點
+        if base_url:
+            logger.info(f"[ai_chat] 使用自訂 OpenAI base_url: {base_url}")
+            _client = OpenAI(api_key=api_key, base_url=base_url)
+        else:
+            _client = OpenAI(api_key=api_key)
+        _client_init_failed = False
+        return _client
+    except Exception as e:
+        logger.error(f"[ai_chat] OpenAI 初始化失敗: {e}")
+        _client_init_failed = True
+        return None
 
 
 # 統一引導語（多語言）
@@ -571,7 +577,98 @@ def _check_faq(user_message: str, lang: str = "zh_tw") -> str | None:
     return None
 
 
-# ===== 對話記憶 =====
+# ===== 智能 Fallback 回覆（V21.1 新增）=====
+
+def _smart_fallback_reply(user_message: str, user_lang: str = "zh_tw") -> str:
+    """
+    當 GPT 不可用時，根據訊息內容給出有意義的回覆，
+    而不是千篇一律的客服訊息。
+    """
+    msg_lower = user_message.lower().strip()
+
+    # ── 問候類 ──
+    greet_keywords = ["嗨", "你好", "哈囉", "大家好", "hi", "hello", "hey", "安安",
+                      "早安", "晚安", "午安", "好啊", "在嗎"]
+    if any(kw in msg_lower for kw in greet_keywords):
+        if user_lang == "en":
+            return (
+                "Hello Boss! Welcome to LA1 Sports AI Platform!\n\n"
+                "I can help you with:\n"
+                "- Live scores: just type a team name\n"
+                "- AI analysis: /football /baseball /basketball\n"
+                "- Predictions & games: /predict /checkin\n"
+                "- 539 Lottery: /539\n\n"
+                "What would you like to know?"
+            )
+        return (
+            "老闆您好！歡迎來到 LA1 智能服務平台！\n\n"
+            "我可以幫您：\n"
+            "- 查即時比分：直接輸入隊名即可\n"
+            "- AI 分析：/football /baseball /basketball\n"
+            "- 預測遊戲：/predict /checkin\n"
+            "- 539 彩票：/539\n\n"
+            "想知道什麼儘管問我！"
+        )
+
+    # ── 體育分析類 ──
+    sports_analysis_kw = ["分析", "預測", "勝率", "爆冷", "冷門", "推薦",
+                          "今天買", "買什麼", "analyze", "predict"]
+    if any(kw in msg_lower for kw in sports_analysis_kw):
+        if user_lang == "en":
+            return (
+                "Boss, for sports analysis try these commands:\n\n"
+                "/football - Today's football AI analysis\n"
+                "/baseball - Today's baseball AI analysis\n"
+                "/basketball - Today's basketball AI analysis\n"
+                "/allanalyze - All sports combined analysis\n"
+                "/analyze + team name - Deep analysis of a specific team\n\n"
+                "Give it a try!"
+            )
+        return (
+            "老闆您好，想看體育分析可以試試這些指令：\n\n"
+            "/football - 今日足球 AI 分析\n"
+            "/baseball - 今日棒球 AI 分析\n"
+            "/basketball - 今日籃球 AI 分析\n"
+            "/allanalyze - 三種運動綜合分析\n"
+            "/analyze + 隊名 - 深度分析特定球隊\n\n"
+            "趕快試試吧！"
+        )
+
+    # ── 遊戲介紹類 ──
+    fun_keywords = ["好玩", "什麼遊戲", "玩什麼", "有什麼", "推薦遊戲",
+                    "fun", "game", "play", "樂子"]
+    if any(kw in msg_lower for kw in fun_keywords):
+        return (
+            "老闆您好！平台提供豐富功能：\n\n"
+            "- 體育即時比分與 AI 分析\n"
+            "- 539 彩票遊戲（每日 20:30 開獎）\n"
+            "- 賽事預測投票遊戲\n"
+            "- 積分排行榜\n"
+            "- 遊戲平台：http://la1111.ofa168kh.com/\n\n"
+            "輸入 /help 查看完整指令列表！"
+        )
+
+    # ── 默認友好回覆（不再是客服訊息） ──
+    if user_lang == "en":
+        return (
+            "Hello Boss! I'm the LA1 Sports AI assistant.\n\n"
+            "You can:\n"
+            "- Type any team name for live scores\n"
+            "- Use /help to see all commands\n"
+            "- Ask me anything about sports!\n\n"
+            "What would you like to know?"
+        )
+    return (
+        "老闆您好！我是 LA1 體育 AI 助手。\n\n"
+        "您可以：\n"
+        "- 直接輸入隊名查即時比分\n"
+        "- 輸入 /help 查看所有指令\n"
+        "- 問我任何體育相關問題！\n\n"
+        "想知道什麼儘管問我！"
+    )
+
+
+# ===== \u5c0d\u8a71\u8a18\u61b6 =====
 
 _conversation_history: dict = defaultdict(list)
 MAX_HISTORY = 20  # 每用戶最多保留的訊息數
@@ -617,10 +714,8 @@ def get_ai_response(user_id: int, user_message: str, user_lang: str = "zh_tw") -
 
         client = _get_client()
         if client is None:
-            cs_guide = _get_cs_guide(user_lang)
-            if user_lang == "en":
-                return f"Hello Boss! Please feel free to ask me anything. For account or game issues, contact @yu_888yu\n\n{cs_guide}"
-            return f"老闆您好，請問有什麼可以幫您的？如有帳號或遊戲問題，歡迎聯繫客服 @yu_888yu\n\n{cs_guide}"
+            logger.warning(f"[ai_chat] GPT 不可用，使用智能 fallback。user={user_id} msg='{user_message[:50]}'")
+            return _smart_fallback_reply(user_message, user_lang)
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=messages,
@@ -649,10 +744,8 @@ def get_ai_response(user_id: int, user_message: str, user_lang: str = "zh_tw") -
 
     except Exception as e:
         logger.error(f"AI 客服錯誤: {e}", exc_info=True)
-        cs_guide = _get_cs_guide(user_lang)
-        if user_lang == "en":
-            return f"Hello Boss! Please feel free to ask me anything. For account or game issues, contact @yu_888yu\n\n{cs_guide}"
-        return f"老闆您好，請問有什麼可以幫您的？如有帳號或遊戲問題，歡迎聯繫客服 @yu_888yu\n\n{cs_guide}"
+        # V21.1：即使 GPT 失敗，也給出有意義的回覆
+        return _smart_fallback_reply(user_message, user_lang)
 
 
 def generate_sports_reply(

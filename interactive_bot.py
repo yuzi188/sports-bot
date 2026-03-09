@@ -1233,7 +1233,8 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
                 await reply_split(update, ai_reply)
             except Exception as e2:
                 logger.error(f"AI fallback error: {e2}", exc_info=True)
-                await reply(update, "老闆您好，請問有什麼可以幫您的？如有帳號或遊戲問題，歡迎聯繫客服 @yu_888yu")
+                # V21.1: 最終 fallback 也給出友好回覆，不再千篇一律客服訊息
+                await reply(update, "老闆您好！我是 LA1 體育 AI 助手。\n\n您可以：\n- 直接輸入隊名查即時比分\n- 輸入 /help 查看所有指令\n- 問我任何體育相關問題！\n\n如有帳號或金流問題，請聯繫客服 @yu_888yu")
 
 
 async def _maybe_send_recommendation(update: Update, user_id: int):
