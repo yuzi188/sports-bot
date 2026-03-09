@@ -1,27 +1,23 @@
 """
-互動式 Telegram Bot V18 - 完整功能整合版
+互動式 Telegram Bot V19 - 全面 GPT 自然語言回覆版
 
-V18 新增：
-  1. 用戶喜好記憶學習（SQLite）
-     - /myfav  — 個人喜好總覽（最愛球隊/運動/語言/互動習慣）
-     - /style  — 切換詳細分析/快速比分模式
-     - 每次查詢自動記錄偏好，有相關賽事時主動推薦
+V19 新增：
+  1. 全面 GPT 自然語言回覆架構
+     - 客服問題（充值/提現/帳號/USDT 等）→ FAQ 話術直接回答，零延遲
+     - 體育賽事問題 → GPT 理解意圖 → ESPN API 查資料 → GPT 自然語言整理回覆
+     - 所有體育查詢結果都通過 generate_sports_reply() 整理成自然語言
 
-  2. 投票預測遊戲（Telegram Poll + 積分系統）
-     - /rank     — 積分排行榜 Top 10
-     - /myscore  — 個人積分與預測戰績
-     - PollAnswerHandler 自動記錄投票
-     - 比賽結算後自動公布結果並更新積分
+  2. 修復意圖識別誤判
+     - WBC 查詢不再被誤判為 NHL 楓葉隊
+     - 「比賽」「今日」等通用詞不再被模糊匹配為隊名
+     - 加入前置規則：WBC/MLB/NBA/NHL/NFL 直接識別，不走 GPT
 
-  3. 群體行為學習分析系統
-     - /insights — 即時社群趨勢洞察（熱門度/群體預測/爆冷）
-     - 每週一自動發布「本週玩家趨勢報告」
-     - 根據互動率自動優化推播風格
-
-V17 保留：
-  4. /football /baseball /basketball /allanalyze — 三種運動 AI 分析
-  5. /winrate — 勝率統計面板
-  6. 修復 PII 誤判、多語言邏輯、錯誤處理
+V18 保留：
+  3. 用戶喜好記憶學習（SQLite）
+  4. 投票預測遊戲（Telegram Poll + 積分系統）
+  5. 群體行為學習分析系統
+  6. /football /baseball /basketball /allanalyze — 三種運動 AI 分析
+  7. /winrate — 勝率統計面板
 """
 import sys
 import os
@@ -640,73 +636,157 @@ async def cmd_insights(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     """
     統一的訊息分發函數（私訊和群組共用）。
-    V18 新增：
+    V19 重構：
+      - 客服問題（充值/提現/帳號等）→ FAQ 話術直接回答
+      - 體育問題 → GPT 意圖識別 → ESPN API → GPT 自然語言整理回覆
       - 查詢時自動記錄個人喜好 + 群體統計
       - 查詢後主動推薦相關賽事（若有喜好記錄）
-      - 加入 football_analyze / baseball_analyze / basketball_analyze 路由
     """
     user_id = update.effective_user.id if update.effective_user else 0
     user_lang = _get_user_lang(context, user_id)
 
     try:
-        from modules.ai_chat import should_use_bot_function, get_ai_response, add_to_history
-        intent = should_use_bot_function(user_id, text)
-        action = intent.get("action", "chat")
-        query  = intent.get("query", "").strip()
-        logger.info(f"[dispatch] user={user_id} lang={user_lang} text='{text}' → action={action} query='{query}'")
+        from modules.ai_chat import (
+            should_use_bot_function, get_ai_response, add_to_history,
+            generate_sports_reply, classify_message_type, _check_faq,
+        )
 
-        if action == "details" and query:
-            await handle_details_query(update, query)
-            _record_user_query(user_id, query, "team")
-            add_to_history(user_id, "user", text)
-            add_to_history(user_id, "assistant", f"查詢了 {query} 的即時詳細資料")
+        # ── Step 1：快速判斷訊息類型 ──
+        msg_type = classify_message_type(text)
+        logger.info(f"[dispatch] user={user_id} lang={user_lang} type={msg_type} text='{text}'")
 
-        elif action == "upcoming" and query:
-            await reply(update, f"⏳ 查詢 {query} 的下一場賽程...")
-            result = get_upcoming_matches(query)
-            response = format_upcoming_response(result)
-            await reply_split(update, response)
-            _record_user_query(user_id, query, "team")
-            add_to_history(user_id, "user", text)
-            add_to_history(user_id, "assistant", response[:200])
-
-        elif action == "score" and query:
-            await handle_score_query(update, query, user_id=user_id)
-            _record_user_query(user_id, query, "team")
-
-        elif action == "live":
-            await cmd_live(update, context)
-
-        elif action == "hot":
-            await cmd_hot(update, context)
-
-        elif action == "leaders":
-            context.args = query.split() if query else []
-            await cmd_leaders(update, context)
-
-        elif action == "today":
-            await cmd_today(update, context)
-
-        elif action == "analyze" and query:
-            context.args = query.split()
-            await cmd_analyze(update, context)
-
-        elif action == "football_analyze":
-            await cmd_football_analyze(update, context)
-
-        elif action == "baseball_analyze":
-            await cmd_baseball_analyze(update, context)
-
-        elif action == "basketball_analyze":
-            await cmd_basketball_analyze(update, context)
-
-        elif is_query(text):
-            await handle_score_query(update, text, user_id=user_id)
-            _record_user_query(user_id, text, "team")
-
-        else:
+        # ── Step 2：客服問題 → FAQ 話術直接回答（不走 GPT 意圖識別）──
+        if msg_type == "cs":
+            faq_reply = _check_faq(text, lang=user_lang)
+            if faq_reply:
+                await reply_split(update, faq_reply)
+                add_to_history(user_id, "user", text)
+                add_to_history(user_id, "assistant", faq_reply[:200])
+                return
+            # FAQ 未命中，走 GPT 客服助理
             ai_reply = get_ai_response(user_id, text, user_lang=user_lang)
             await reply_split(update, ai_reply)
+            return
+
+        # ── Step 3：體育問題 → GPT 意圖識別 ──
+        if msg_type in ("sports", "chat"):
+            intent = should_use_bot_function(user_id, text)
+            action = intent.get("action", "chat")
+            query  = intent.get("query", "").strip()
+            logger.info(f"[dispatch] → action={action} query='{query}'")
+
+            if action == "details" and query:
+                await handle_details_query(update, query)
+                _record_user_query(user_id, query, "team")
+                add_to_history(user_id, "user", text)
+                add_to_history(user_id, "assistant", f"查詢了 {query} 的即時詳細資料")
+
+            elif action == "upcoming" and query:
+                await reply(update, f"⏳ 查詢 {query} 的下一場賽程...")
+                result = get_upcoming_matches(query)
+                raw_response = format_upcoming_response(result)
+                # ── 用 GPT 整理賽程回覆 ──
+                try:
+                    gpt_reply = generate_sports_reply(
+                        user_id=user_id,
+                        user_message=text,
+                        raw_data=raw_response,
+                        action="upcoming",
+                        query=query,
+                        user_lang=user_lang,
+                    )
+                    await reply_split(update, gpt_reply)
+                except Exception:
+                    await reply_split(update, raw_response)
+                _record_user_query(user_id, query, "team")
+                add_to_history(user_id, "user", text)
+                add_to_history(user_id, "assistant", raw_response[:200])
+
+            elif action == "score" and query:
+                await handle_score_query(
+                    update, query,
+                    user_id=user_id,
+                    original_message=text,
+                    action="score",
+                    user_lang=user_lang,
+                )
+                _record_user_query(user_id, query, "team")
+
+            elif action == "live":
+                await reply(update, "⏳ 正在獲取目前進行中的比賽...")
+                result = search_live_scores("live")
+                raw_text = format_response(result)
+                try:
+                    gpt_reply = generate_sports_reply(
+                        user_id=user_id, user_message=text,
+                        raw_data=raw_text, action="live", query="",
+                        user_lang=user_lang,
+                    )
+                    await reply_split(update, gpt_reply)
+                except Exception:
+                    await reply_split(update, raw_text)
+
+            elif action == "hot":
+                await reply(update, "⏳ 正在獲取今日熱門焦點賽事...")
+                result = search_live_scores("hot")
+                raw_text = format_response(result)
+                try:
+                    gpt_reply = generate_sports_reply(
+                        user_id=user_id, user_message=text,
+                        raw_data=raw_text, action="hot", query="",
+                        user_lang=user_lang,
+                    )
+                    await reply_split(update, gpt_reply)
+                except Exception:
+                    await reply_split(update, raw_text)
+
+            elif action == "leaders":
+                context.args = query.split() if query else []
+                await cmd_leaders(update, context)
+
+            elif action == "today":
+                await reply(update, "⏳ 正在獲取今日賽事總覽...")
+                result = search_live_scores("today")
+                raw_text = format_response(result)
+                try:
+                    gpt_reply = generate_sports_reply(
+                        user_id=user_id, user_message=text,
+                        raw_data=raw_text, action="today", query="",
+                        user_lang=user_lang,
+                    )
+                    await reply_split(update, gpt_reply)
+                except Exception:
+                    await reply_split(update, raw_text)
+                _record_user_query(user_id, "today", "command")
+
+            elif action == "analyze" and query:
+                context.args = query.split()
+                await cmd_analyze(update, context)
+
+            elif action == "football_analyze":
+                await cmd_football_analyze(update, context)
+
+            elif action == "baseball_analyze":
+                await cmd_baseball_analyze(update, context)
+
+            elif action == "basketball_analyze":
+                await cmd_basketball_analyze(update, context)
+
+            elif is_query(text):
+                # 備用：is_query 判斷為體育查詢但 GPT 沒識別到
+                await handle_score_query(
+                    update, text,
+                    user_id=user_id,
+                    original_message=text,
+                    action="score",
+                    user_lang=user_lang,
+                )
+                _record_user_query(user_id, text, "team")
+
+            else:
+                # action == "chat" → 走 GPT 客服助理
+                ai_reply = get_ai_response(user_id, text, user_lang=user_lang)
+                await reply_split(update, ai_reply)
 
         # ── V18：查詢後主動推薦（僅私訊，避免頻道刷屏）──
         if update.message and update.message.chat.type == "private":
@@ -716,7 +796,7 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
         logger.error(f"dispatch error: {e}", exc_info=True)
         if is_query(text):
             try:
-                await handle_score_query(update, text)
+                await handle_score_query(update, text, user_id=user_id)
             except Exception as e2:
                 logger.error(f"score query fallback error: {e2}")
                 await reply(update, "❌ 查詢失敗，請稍後再試")
@@ -909,20 +989,45 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
 
-async def handle_score_query(update: Update, query: str, user_id: int = 0):
-    """處理比分查詢"""
+async def handle_score_query(
+    update: Update,
+    query: str,
+    user_id: int = 0,
+    original_message: str = "",
+    action: str = "score",
+    user_lang: str = "zh_tw",
+):
+    """
+    處理比分查詢。
+    V19 更新：查完 ESPN 資料後，用 GPT generate_sports_reply() 生成自然語言回覆。
+    """
     logger.info(f"開始查詢: {query}")
     try:
         result   = search_live_scores(query)
-        response = format_response(result)
-        await reply_split(update, response)
+        raw_text = format_response(result)
+
+        # ── V19：用 GPT 整理成自然語言回覆 ──
         if user_id:
             try:
-                from modules.ai_chat import add_to_history
-                add_to_history(user_id, "user", query)
-                add_to_history(user_id, "assistant", f"查詢結果：{query}")
-            except Exception:
-                pass
+                from modules.ai_chat import generate_sports_reply, add_to_history
+                gpt_reply = generate_sports_reply(
+                    user_id=user_id,
+                    user_message=original_message or query,
+                    raw_data=raw_text,
+                    action=action,
+                    query=query,
+                    user_lang=user_lang,
+                )
+                await reply_split(update, gpt_reply)
+                add_to_history(user_id, "user", original_message or query)
+                add_to_history(user_id, "assistant", gpt_reply[:200])
+            except Exception as gpt_err:
+                logger.warning(f"GPT 整理回覆失敗，改用原始資料: {gpt_err}")
+                await reply_split(update, raw_text)
+        else:
+            # 沒有 user_id 時直接回傳原始格式（頻道查詢等）
+            await reply_split(update, raw_text)
+
     except Exception as e:
         logger.error(f"Query error: {e}", exc_info=True)
         await reply(update, "❌ 查詢失敗，請稍後再試")

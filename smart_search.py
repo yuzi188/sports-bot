@@ -1,6 +1,12 @@
 """
-智能搜尋引擎 v1
-流程：輸入 → AI語意解析 → 隊名匹配（含模糊） → 聯盟判斷 → API查詢 → 結果過濾
+智能搜尋引擎 v2 - 修復版
+流程：輸入 → 運動類型識別 → 隊名匹配（精確優先，模糊需過濾通用詞）→ 聯盟判斷 → API查詢
+
+V2 修復：
+  1. 加入通用詞黑名單（_QUERY_STOP_WORDS）：「比賽」「今日」等不被模糊匹配為隊名
+  2. 提高模糊匹配門檻（score_cutoff: 50 → 65）：減少誤匹配
+  3. WBC 關鍵字識別優先於隊名匹配
+  4. 聯盟名稱（WBC/MLB/NBA/NHL/NFL）不參與隊名模糊匹配
 """
 
 import re
@@ -13,22 +19,38 @@ from team_db import (
 )
 
 # OpenAI client（用於 AI 語意解析和翻譯）
-client = OpenAI()
+_client = None
 
-# 運動類型關鍵字
+def _get_client():
+    global _client
+    if _client is None:
+        _client = OpenAI()
+    return _client
+
+# 運動類型關鍵字（從長到短排序匹配）
 SPORT_KEYWORDS = {
+    # WBC 最高優先（防止被誤判為 NHL）
+    "世界棒球經典賽": "wbc",
+    "棒球經典賽": "wbc",
+    "世界棒球": "wbc",
+    "經典賽": "wbc",
+    "wbc": "wbc",
+    # 足球
     "足球": "soccer", "英超": "soccer", "西甲": "soccer",
     "德甲": "soccer", "意甲": "soccer", "法甲": "soccer",
     "歐冠": "soccer", "歐霸": "soccer",
     "soccer": "soccer", "football": "soccer",
+    # 棒球
     "棒球": "baseball", "mlb": "baseball",
     "美國職棒": "baseball", "職棒": "baseball", "baseball": "baseball",
+    # 籃球
     "籃球": "basketball", "nba": "basketball",
     "美國職籃": "basketball", "職籃": "basketball", "basketball": "basketball",
+    # 冰球
     "冰球": "hockey", "nhl": "hockey", "hockey": "hockey",
+    "冰上曲棍球": "hockey",
+    # 美式足球
     "美式足球": "football_us", "nfl": "football_us", "橄欖球": "football_us",
-    "wbc": "wbc", "經典賽": "wbc", "世界棒球經典賽": "wbc",
-    "棒球經典賽": "wbc", "世界棒球": "wbc",
 }
 
 # sport_filter → ESPN 端點列表
@@ -50,6 +72,32 @@ ALL_ENDPOINTS = [
     ("football", "nfl", "🏈"),
 ]
 
+# ===== 通用詞黑名單 =====
+# 這些詞不應被模糊匹配到隊名
+# 例如：「比賽」→ 比爾（Bills）、「今日」→ 日本（Japan）
+_QUERY_STOP_WORDS = {
+    # 時間詞
+    "今日", "今天", "明天", "昨天", "本週", "這週", "上週", "最近", "近期",
+    "今晚", "明晚", "今早", "今午",
+    # 查詢動詞
+    "比賽", "賽事", "查詢", "查看", "搜尋", "搜索",
+    "進行", "進行中", "直播", "即時", "最新",
+    # 分析詞
+    "分析", "預測", "勝率", "比分", "結果", "成績", "狀況", "情況",
+    "怎樣", "如何", "怎麼", "什麼", "哪些", "有哪", "有什麼",
+    # 賽程詞
+    "賽程", "下場", "下一場", "接下來", "之後", "未來", "下週",
+    "先發", "投手", "球員", "陣容", "名單",
+    # 聯盟名稱（不是隊名）
+    "wbc", "mlb", "nba", "nhl", "nfl",
+    "英超", "西甲", "德甲", "意甲", "法甲", "歐冠", "歐霸",
+    # 通用詞
+    "世界", "國際", "全球", "所有", "全部",
+    "hot", "live", "today", "score", "game", "games",
+    # 中文通用詞
+    "熱門", "焦點", "重點", "精彩",
+}
+
 
 def smart_parse(query: str) -> dict:
     """
@@ -65,17 +113,18 @@ def smart_parse(query: str) -> dict:
     """
     text = query.strip()
 
-    # Step 1: 檢查運動類型關鍵字
+    # Step 1: 檢查運動類型關鍵字（從長到短匹配，WBC 優先）
     sport_filter = None
     is_sport_only = False
     remaining = text
 
-    # 從長到短匹配
     for kw in sorted(SPORT_KEYWORDS.keys(), key=len, reverse=True):
         if kw.lower() in text.lower():
             sport_filter = SPORT_KEYWORDS[kw]
             remaining = re.sub(re.escape(kw), '', text, flags=re.IGNORECASE).strip()
-            if not remaining:
+            # 移除剩餘的通用詞後，判斷是否純運動查詢
+            remaining_clean = _remove_stop_words(remaining)
+            if not remaining_clean:
                 is_sport_only = True
             break
 
@@ -96,10 +145,18 @@ def smart_parse(query: str) -> dict:
     }
 
 
+def _remove_stop_words(text: str) -> str:
+    """移除通用詞後回傳剩餘有意義的文字"""
+    parts = re.split(r'\s+', text.strip())
+    meaningful = [p for p in parts if p and p.lower() not in _QUERY_STOP_WORDS]
+    return " ".join(meaningful)
+
+
 def match_teams(text: str) -> list:
     """
     從文字中匹配隊名
     優先精確匹配，找不到再模糊匹配
+    V2 修復：模糊匹配前過濾通用詞，提高門檻
     """
     teams = []
     remaining = text
@@ -108,6 +165,9 @@ def match_teams(text: str) -> list:
     sorted_aliases = sorted(ALIAS_INDEX.keys(), key=len, reverse=True)
     for alias in sorted_aliases:
         if len(alias) < 2:
+            continue
+        # 跳過聯盟名稱本身（不是隊名）
+        if alias.lower() in {"wbc", "mlb", "nba", "nhl", "nfl"}:
             continue
         if alias in remaining.lower():
             info = ALIAS_INDEX[alias]
@@ -130,6 +190,8 @@ def match_teams(text: str) -> list:
         # 分割剩餘文字
         parts = re.split(r'\s+|vs\.?|VS\.?|對|和|v\s', remaining)
         parts = [p.strip() for p in parts if p.strip() and len(p.strip()) >= 2]
+        # ★ 過濾通用詞，防止「比賽」→ 比爾、「今日」→ 日本
+        parts = [p for p in parts if p.lower() not in _QUERY_STOP_WORDS]
 
         for part in parts:
             # 判斷是中文還是英文
@@ -139,7 +201,6 @@ def match_teams(text: str) -> list:
                 candidates = ALL_CN_ALIASES
                 # 中文短詞用字元級匹配
                 if len(part) <= 3:
-                    # 先嘗試單字元差異匹配
                     char_match = _chinese_char_match(part, candidates)
                     if char_match:
                         info = ALIAS_INDEX.get(char_match.lower())
@@ -158,12 +219,12 @@ def match_teams(text: str) -> list:
             if not candidates:
                 continue
 
-            # 模糊匹配 - 使用 partial_ratio 更適合不同長度的比較
+            # ★ 提高模糊匹配門檻（65 → 減少誤匹配）
             result = process.extractOne(
                 part,
                 candidates,
                 scorer=fuzz.WRatio,
-                score_cutoff=50,
+                score_cutoff=65,
             )
 
             if result:
@@ -186,11 +247,19 @@ def _chinese_char_match(query: str, candidates: list) -> str:
     中文字元級匹配：
     對於2-3字的中文，如果有一個字不同但其他字相同，就算匹配
     例如：洋機 → 洋基（1字不同）
+    V2 修復：排除通用詞候選項
     """
+    # 通用詞不參與字元匹配
+    if query in _QUERY_STOP_WORDS:
+        return None
+
     best_match = None
     best_overlap = 0
 
     for candidate in candidates:
+        # 候選項也不能是通用詞
+        if candidate in _QUERY_STOP_WORDS:
+            continue
         if abs(len(candidate) - len(query)) > 1:
             continue
         # 計算共同字元數
@@ -199,8 +268,8 @@ def _chinese_char_match(query: str, candidates: list) -> str:
         if min_len == 0:
             continue
         overlap_ratio = common / min_len
-        # 至少 50% 字元相同（2字詞允許1字不同）
-        if overlap_ratio >= 0.5 and common > best_overlap:
+        # 至少 60% 字元相同（提高門檻）
+        if overlap_ratio >= 0.6 and common > best_overlap:
             best_overlap = common
             best_match = candidate
 
@@ -228,7 +297,6 @@ def determine_endpoints(teams: list, sport_filter: str = None) -> list:
                 key = f"{ep[0]}/{ep[1]}"
                 if key not in seen:
                     seen.add(key)
-                    # 決定 emoji
                     emoji_map = {
                         "baseball": "⚾", "basketball": "🏀",
                         "hockey": "🏒", "football": "🏈", "soccer": "⚽",
@@ -241,7 +309,6 @@ def determine_endpoints(teams: list, sport_filter: str = None) -> list:
                     for ep_sport, ep_league, ep_emoji in ALL_ENDPOINTS:
                         key = f"{ep_sport}/{ep_league}"
                         if key not in seen:
-                            # WBC 隊伍搜尋 WBC + 足球
                             if league == "WBC" and ep_league in ("world-baseball-classic", "all"):
                                 seen.add(key)
                                 endpoints.append((ep_sport, ep_league, ep_emoji))
@@ -316,7 +383,7 @@ def translate_name(en_display_name: str) -> str:
 
     # AI fallback
     try:
-        resp = client.chat.completions.create(
+        resp = _get_client().chat.completions.create(
             model="gpt-4.1-nano",
             messages=[{
                 "role": "user",
