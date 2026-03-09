@@ -258,10 +258,10 @@ async def handle_style_callback(update: Update, context: ContextTypes.DEFAULT_TY
 # ══════════════════════════════════════════════
 
 # ===== 歡迎影片設定 =====
-# 影片 file_id：由 Bot 啟動時自動上傳取得，或直接設定
-# 如果本地檔案存在，啟動時自動上傳並儲存 file_id
-WELCOME_VIDEO_PATH    = "/home/ubuntu/upload/video_AgADQx0AAlLoaVU.mp4"
-WELCOME_VIDEO_FILE_ID = None   # 由 _init_welcome_video() 填入
+# 影片公開 URL（直接傳給 Telegram send_video）
+# 第一次發送後，將回傳的 file_id 快取起來，後續發送不重複下載
+WELCOME_VIDEO_URL     = "https://files.manuscdn.com/user_upload_by_module/session_file/310419663032670396/zOYpATipTMNEkuCQ.mp4"
+WELCOME_VIDEO_FILE_ID = None   # 第一次發送後自動快取
 
 
 def _build_welcome_keyboard(user_id: int) -> InlineKeyboardMarkup:
@@ -293,42 +293,19 @@ def _build_welcome_keyboard(user_id: int) -> InlineKeyboardMarkup:
     ])
 
 
-async def _init_welcome_video(bot) -> str:
+async def _get_welcome_video_source() -> str:
     """
-    初始化歡迎影片。
-    如果本地檔案存在，上傳到 Telegram 取得 file_id。
-    回傳 file_id（成功）或 None（失敗）。
-    """
-    import os
-    global WELCOME_VIDEO_FILE_ID
+    取得歡迎影片來源（file_id 或 URL）。
 
-    # 如果已有 file_id，直接回傳
+    策略：
+    1. 如果已快取 file_id → 直接回傳 file_id（最快）
+    2. 否則回傳公開 URL（Telegram 支援直接用 URL 發送影片）
+
+    第一次發送後，由 cmd_start 將回傳的 file_id 存入 WELCOME_VIDEO_FILE_ID。
+    """
     if WELCOME_VIDEO_FILE_ID:
         return WELCOME_VIDEO_FILE_ID
-
-    # 尚未上傳，嘗試從本地上傳
-    if not os.path.exists(WELCOME_VIDEO_PATH):
-        logger.warning(f"歡迎影片檔案不存在: {WELCOME_VIDEO_PATH}")
-        return None
-
-    try:
-        logger.info(f"正在上傳歡迎影片: {WELCOME_VIDEO_PATH}")
-        # 上傳到一個臨時頻道（用 CHANNEL_URL 對應的頻道 ID）
-        # 這裡用 sendVideo 上傳到 Bot 自己（用 getMe 取 bot_id）
-        me = await bot.get_me()
-        bot_id = me.id
-        with open(WELCOME_VIDEO_PATH, "rb") as f:
-            msg = await bot.send_video(
-                chat_id=bot_id,   # 發送給 Bot 自己（取得 file_id）
-                video=f,
-                caption="歡迎影片",
-            )
-        WELCOME_VIDEO_FILE_ID = msg.video.file_id
-        logger.info(f"歡迎影片上傳成功， file_id={WELCOME_VIDEO_FILE_ID}")
-        return WELCOME_VIDEO_FILE_ID
-    except Exception as e:
-        logger.warning(f"歡迎影片上傳失敗: {e}")
-        return None
+    return WELCOME_VIDEO_URL
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -383,27 +360,29 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_first_time and user_id:
         # ★ 第一次進入：發送影片 + 完整 inline keyboard
+        global WELCOME_VIDEO_FILE_ID
         welcome_kb = _build_welcome_keyboard(user_id)
 
-        # 嘗試發送影片
+        # 取得影片來源（已快取的 file_id 或公開 URL）
+        video_source = await _get_welcome_video_source()
         video_sent = False
-        file_id = WELCOME_VIDEO_FILE_ID
 
-        if not file_id:
-            # 嘗試上傳影片
-            file_id = await _init_welcome_video(context.bot)
+        try:
+            msg = await update.message.reply_video(
+                video=video_source,
+                caption=welcome_text,
+                reply_markup=welcome_kb,
+            )
+            video_sent = True
+            logger.info(f"[歡迎影片] 已發送影片給 user_id={user_id}")
 
-        if file_id:
-            try:
-                await update.message.reply_video(
-                    video=file_id,
-                    caption=welcome_text,
-                    reply_markup=welcome_kb,
-                )
-                video_sent = True
-                logger.info(f"[歡迎影片] 已發送影片給 user_id={user_id}")
-            except Exception as e:
-                logger.warning(f"[歡迎影片] 發送影片失敗: {e}")
+            # 快取 file_id，後續發送不重複下載
+            if not WELCOME_VIDEO_FILE_ID and msg.video:
+                WELCOME_VIDEO_FILE_ID = msg.video.file_id
+                logger.info(f"[歡迎影片] 已快取 file_id={WELCOME_VIDEO_FILE_ID}")
+
+        except Exception as e:
+            logger.warning(f"[歡迎影片] 發送影片失敗: {e}")
 
         if not video_sent:
             # 影片發送失敗，改發文字 + 按鈕
