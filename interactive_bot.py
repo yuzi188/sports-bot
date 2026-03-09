@@ -75,7 +75,7 @@ logger = logging.getLogger(__name__)
 tz = pytz.timezone(TIMEZONE)
 
 # ===== 娛樂城設定 =====
-GAME_URL      = "http://la1111.ofa168hk.com/"
+GAME_URL      = "http://la1111.ofa168kh.com/"
 CHANNEL_URL   = "https://t.me/LA11118"
 CS_URL        = "https://t.me/yu_888yu"
 BOT_USERNAME  = "LA1111_bot"
@@ -307,7 +307,7 @@ def _build_welcome_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("🇹🇼 台站",   url="http://La1111.meta1788.com"),
-            InlineKeyboardButton("🇭🇰 U站",    url="http://la1111.ofa168hk.com"),
+            InlineKeyboardButton("🇭🇰 U站",    url="http://la1111.ofa168kh.com"),
         ],
         [
             InlineKeyboardButton("🇰🇭 代理入口", url="http://agent.ofa168kh.com"),
@@ -397,7 +397,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "🏆 歡迎來到 LA1 智能服務平台！\n\n"
                 "🌐 平台入口：\n"
                 "🇹🇼 台站｜La1111.meta1788.com\n"
-                "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168hk.com\n"
+                "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com\n"
                 "🇰🇭 代理｜agent.ofa168kh.com"
             )
             await update.channel_post.reply_text(welcome_text)
@@ -429,7 +429,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ 🎰 L幣 539 彩票遊戲\n\n"
         "🌐 平台入口：\n"
         "🇹🇼 台站｜La1111.meta1788.com\n"
-        "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168hk.com\n"
+        "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com\n"
         "🇰🇭 代理｜agent.ofa168kh.com\n\n"
         "🤝 商務合作：https://t.me/OFA168Abe1\n\n"
         "🎰 輸入 /539 開始 L幣 539 彩票！\n\n"
@@ -956,7 +956,7 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
             "🇹🇼 台站\n"
             "http://La1111.meta1788.com\n\n"
             "🌏 U站\n"
-            "http://la1111.ofa168hk.com"
+            "http://la1111.ofa168kh.com"
         )
         return
 
@@ -1189,7 +1189,7 @@ async def send_first_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "✅ 直接問任何體育問題，不需要指令！\n\n"
         "🌐 平台入口：\n"
         "🇹🇼 台站｜La1111.meta1788.com\n"
-        "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168hk.com\n"
+        "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com\n"
         "🇰🇭 代理｜agent.ofa168kh.com\n\n"
         "🤝 商務合作：https://t.me/OFA168Abe1\n\n"
         "🎮 點擊下方【遊戲】按鈕立即進入！"

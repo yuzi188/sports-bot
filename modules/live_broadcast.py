@@ -185,7 +185,7 @@ def build_live_broadcast_message() -> str | None:
             f"{body}\n\n"
             f"{'─' * 22}\n"
             f"💬 你覺得誰會贏？留言區告訴我們！\n\n"
-            f"🎮 娛樂城：http://la1111.ofa168hk.com/\n"
+            f"🎮 娛樂城：http://la1111.ofa168kh.com/\n"
             f"💼 商務合作：https://t.me/yu_888yu\n\n"
             f"📡 世界體育數據室"
         )
@@ -216,7 +216,7 @@ def build_live_broadcast_message() -> str | None:
             f"{body}\n\n"
             f"{'─' * 22}\n"
             f"💬 你最期待哪場比賽？留言區告訴我們！\n\n"
-            f"🎮 娛樂城：http://la1111.ofa168hk.com/\n"
+            f"🎮 娛樂城：http://la1111.ofa168kh.com/\n"
             f"💼 商務合作：https://t.me/yu_888yu\n\n"
             f"📡 世界體育數據室"
         )

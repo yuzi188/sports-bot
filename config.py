@@ -15,7 +15,7 @@ OPENAI_MODEL   = os.environ.get("OPENAI_MODEL", "gpt-4o-mini").strip()
 
 # ── 平台入口 URL ──
 GAME_URL_TW      = os.environ.get("GAME_URL_TW", "http://La1111.meta1788.com").strip()
-GAME_URL_U       = os.environ.get("GAME_URL_U", "http://la1111.ofa168hk.com/").strip()
+GAME_URL_U       = os.environ.get("GAME_URL_U", "http://la1111.ofa168kh.com/").strip()
 AGENT_URL_KH     = os.environ.get("AGENT_URL_KH", "http://agent.ofa168kh.com").strip()
 
 # ── 聯絡資訊 ──

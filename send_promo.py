@@ -9,7 +9,7 @@ reply_markup = {
     "inline_keyboard": [
         [
             {"text": "🇹🇼 台站｜立即註冊", "url": "http://La1111.meta1788.com"},
-            {"text": "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜USDT專區", "url": "http://la1111.ofa168hk.com"}
+            {"text": "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜USDT專區", "url": "http://la1111.ofa168kh.com"}
         ],
         [
             {"text": "🇰🇭 代理入口", "url": "http://agent.ofa168kh.com"}
@@ -24,7 +24,7 @@ reply_markup = {
             {"text": "🤝 商務合作", "url": "https://t.me/OFA168Abe1"}
         ],
         [
-            {"text": "🎮 立即進入遊戲", "url": "http://la1111.ofa168hk.com/"}
+            {"text": "🎮 立即進入遊戲", "url": "http://la1111.ofa168kh.com/"}
         ]
     ]
 }

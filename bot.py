@@ -393,14 +393,14 @@ def task_group_video_promo():
     
     # 建立按鈕 (Inline Keyboard)
     # 由於 bot.py 是獨立運行的腳本，直接使用 Telegram Bot API 發送
-    game_url = "http://la1111.ofa168hk.com/"
+    game_url = "http://la1111.ofa168kh.com/"
     cs_url = "https://t.me/yu_888yu"
     
     reply_markup = {
         "inline_keyboard": [
             [
                 {"text": "🇹🇼 台站｜立即註冊", "url": "http://La1111.meta1788.com"},
-                {"text": "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜USDT專區", "url": "http://la1111.ofa168hk.com"}
+                {"text": "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜USDT專區", "url": "http://la1111.ofa168kh.com"}
             ],
             [
                 {"text": "🇰🇭 代理入口", "url": "http://agent.ofa168kh.com"}
@@ -415,7 +415,7 @@ def task_group_video_promo():
                 {"text": "🤝 商務合作", "url": "https://t.me/OFA168Abe1"}
             ],
             [
-                {"text": "🎮 立即進入遊戲", "url": "http://la1111.ofa168hk.com/"}
+                {"text": "🎮 立即進入遊戲", "url": "http://la1111.ofa168kh.com/"}
             ],
             [
                 {"text": "🎱 去 Bot 玩 539", "url": "https://t.me/LA1111_bot?start=539"}

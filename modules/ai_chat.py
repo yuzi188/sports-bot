@@ -332,7 +332,7 @@ _FAQ_DB = [
         ["usdt", "USDT", "U幣", "u幣", "U站", "u站", "香港站", "儲值U", "儲值u", "加密貨幣", "泰達幣", "虛擬貨幣", "txid", "TXID", "交易明細", "轉帳明細"],
         "老闆您好！儲值 U（USDT）需前往香港站進行操作 🎰\n\n"
         "立即點擊以下連結完成註冊：\n"
-        "👉 http://la1111.ofa168hk.com/\n\n"
+        "👉 http://la1111.ofa168kh.com/\n\n"
         f"{_CS_GUIDE}",
     ),
     (
@@ -376,7 +376,7 @@ _FAQ_DB = [
     # ── 遊戲平台 ──
     (
         ["遊戲", "進入遊戲", "遊戲平台", "娛樂城", "平台"],
-        "老闆您好，合作遊戲平台：http://la1111.ofa168hk.com/\n\n點擊下方【🎮 遊戲】按鈕即可進入！",
+        "老闆您好，合作遊戲平台：http://la1111.ofa168kh.com/\n\n點擊下方【🎮 遊戲】按鈕即可進入！",
     ),
     # ── 上分 / 點數問題 ──
     (
@@ -405,7 +405,7 @@ _FAQ_DB_EN = [
     ),
     (
         ["usdt", "crypto", "u coin", "tether", "hong kong"],
-        f"Hello Boss! To deposit USDT, please visit our Hong Kong platform:\n\n👉 http://la1111.ofa168hk.com/\n\n{_CS_GUIDE_MAP['en']}",
+        f"Hello Boss! To deposit USDT, please visit our Hong Kong platform:\n\n👉 http://la1111.ofa168kh.com/\n\n{_CS_GUIDE_MAP['en']}",
     ),
     (
         ["deposit", "top up", "recharge", "add funds"],
@@ -429,7 +429,7 @@ _FAQ_DB_EN = [
     ),
     (
         ["game", "platform", "casino", "play"],
-        f"Hello Boss! Game platform: http://la1111.ofa168hk.com/\n\nClick the 【🎮 Game】 button below to enter!",
+        f"Hello Boss! Game platform: http://la1111.ofa168kh.com/\n\nClick the 【🎮 Game】 button below to enter!",
     ),
     (
         ["points", "credits", "not received", "not credited"],
