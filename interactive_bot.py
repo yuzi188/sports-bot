@@ -300,12 +300,51 @@ async def _get_welcome_video_source() -> str:
     策略：
     1. 如果已快取 file_id → 直接回傳 file_id（最快）
     2. 否則回傳公開 URL（Telegram 支援直接用 URL 發送影片）
-
-    第一次發送後，由 cmd_start 將回傳的 file_id 存入 WELCOME_VIDEO_FILE_ID。
     """
     if WELCOME_VIDEO_FILE_ID:
         return WELCOME_VIDEO_FILE_ID
     return WELCOME_VIDEO_URL
+
+
+async def send_daily_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """
+    發送每日歡迎影片 + inline keyboard。
+    由 handle_message / handle_group_message 在用戶每天第一次傳訊息時呼叫。
+    發送後自動標記今天已發送，同一天內不重複。
+    """
+    global WELCOME_VIDEO_FILE_ID
+    welcome_kb = _build_welcome_keyboard(user_id)
+    video_source = await _get_welcome_video_source()
+
+    try:
+        msg = await update.message.reply_video(
+            video=video_source,
+            reply_markup=welcome_kb,
+        )
+        logger.info(f"[每日歡迎] 已發送影片給 user_id={user_id}")
+
+        # 快取 file_id，後續發送不重複下載
+        if not WELCOME_VIDEO_FILE_ID and msg.video:
+            WELCOME_VIDEO_FILE_ID = msg.video.file_id
+            logger.info(f"[每日歡迎] 已快取 file_id={WELCOME_VIDEO_FILE_ID}")
+
+    except Exception as e:
+        logger.warning(f"[每日歡迎] 影片發送失敗: {e}，改發按鈕")
+        # Fallback：影片失敗改發按鈕
+        try:
+            await update.message.reply_text(
+                "🏆 LA1 智能體育服務平台，歡迎你回來！",
+                reply_markup=welcome_kb,
+            )
+        except Exception:
+            pass
+
+    # 標記今天已發送
+    try:
+        from modules.user_preferences import mark_daily_welcome_sent
+        mark_daily_welcome_sent(user_id)
+    except Exception as e:
+        logger.warning(f"[每日歡迎] 標記失敗: {e}")
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1026,8 +1065,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     text = update.message.text.strip()
     logger.info(f"[私訊] {text}")
-    if not context.user_data.get("welcomed"):
-        await send_first_welcome(update, context)
+
+    # ── 每日第一次訊息：發送歡迎影片 + inline keyboard ──
+    user_id = update.effective_user.id if update.effective_user else 0
+    if user_id:
+        try:
+            from modules.user_preferences import should_send_daily_welcome
+            if should_send_daily_welcome(user_id):
+                await send_daily_welcome(update, context, user_id)
+        except Exception as e:
+            logger.warning(f"[每日歡迎] 判斷失敗: {e}")
+
     if await handle_menu_button(update, context, text):
         return
     await dispatch_message(update, context, text)
@@ -1039,6 +1087,17 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     text = update.message.text.strip()
     logger.info(f"[群組] {text}")
+
+    # ── 每日第一次訊息：發送歡迎影片 + inline keyboard ──
+    user_id = update.effective_user.id if update.effective_user else 0
+    if user_id:
+        try:
+            from modules.user_preferences import should_send_daily_welcome
+            if should_send_daily_welcome(user_id):
+                await send_daily_welcome(update, context, user_id)
+        except Exception as e:
+            logger.warning(f"[每日歡迎] 判斷失敗: {e}")
+
     if await handle_menu_button(update, context, text):
         return
     await dispatch_message(update, context, text)

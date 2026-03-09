@@ -58,6 +58,7 @@ def init_db():
                 language             TEXT    DEFAULT 'zh_tw',
                 style                TEXT    DEFAULT 'auto',
                 welcome_video_sent   INTEGER DEFAULT 0,   -- 1=已發送歡迎影片, 0=尚未發送
+                last_welcome_date    TEXT    DEFAULT NULL,  -- 最後一次發送歡迎影片的日期 (YYYY-MM-DD)
                 created_at           TEXT    DEFAULT (datetime('now')),
                 updated_at           TEXT    DEFAULT (datetime('now'))
             );
@@ -107,13 +108,22 @@ def init_db():
                 ON favorite_sports(user_id, query_count DESC);
         """)
     # V19.3 遷移：若舊表缺少 welcome_video_sent 欄位，自動補加
-    # 用獨立 try/except 避免欄位已存在時報錯
     try:
         with _get_conn() as conn:
             conn.execute(
                 "ALTER TABLE user_settings ADD COLUMN welcome_video_sent INTEGER DEFAULT 0"
             )
         logger.info("已新增 welcome_video_sent 欄位")
+    except Exception:
+        pass  # 欄位已存在，忽略錯誤
+
+    # V19.5 遷移：若舊表缺少 last_welcome_date 欄位，自動補加
+    try:
+        with _get_conn() as conn:
+            conn.execute(
+                "ALTER TABLE user_settings ADD COLUMN last_welcome_date TEXT DEFAULT NULL"
+            )
+        logger.info("已新增 last_welcome_date 欄位")
     except Exception:
         pass  # 欄位已存在，忽略錯誤
 
@@ -222,6 +232,53 @@ def mark_welcome_video_sent(user_id: int):
         logger.info(f"[歡迎影片] 已標記 user_id={user_id} 為已發送")
     except Exception as e:
         logger.warning(f"mark_welcome_video_sent 失敗: {e}")
+
+
+def should_send_daily_welcome(user_id: int) -> bool:
+    """
+    判斷用戶今天是否應發送歡迎影片。
+
+    邏輯：
+    - 如果 last_welcome_date 為 NULL 或不是今天 → True（應發送）
+    - 如果 last_welcome_date 已是今天 → False（不重複）
+
+    Returns:
+        True  = 今天尚未發送（應發送影片）
+        False = 今天已發送過（不重複）
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        with _get_conn() as conn:
+            row = conn.execute(
+                "SELECT last_welcome_date FROM user_settings WHERE user_id = ?",
+                (user_id,)
+            ).fetchone()
+            if row is None:
+                return True  # 新用戶，尚未建立記錄
+            return row["last_welcome_date"] != today  # 不是今天就發送
+    except Exception as e:
+        logger.warning(f"should_send_daily_welcome 查詢失敗: {e}")
+        return True  # 出錯時保守，假設應發送
+
+
+def mark_daily_welcome_sent(user_id: int):
+    """
+    標記用戶今天已收到歡迎影片。
+    如果用戶不在資料庫中，同時建立記錄。
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    try:
+        with _get_conn() as conn:
+            conn.execute("""
+                INSERT INTO user_settings (user_id, last_welcome_date, updated_at)
+                VALUES (?, ?, datetime('now'))
+                ON CONFLICT(user_id) DO UPDATE SET
+                    last_welcome_date = excluded.last_welcome_date,
+                    updated_at = datetime('now')
+            """, (user_id, today))
+        logger.info(f"[每日歡迎] 已標記 user_id={user_id} 今天（{today}）已發送")
+    except Exception as e:
+        logger.warning(f"mark_daily_welcome_sent 失敗: {e}")
 
 
 # ══════════════════════════════
