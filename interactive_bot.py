@@ -848,6 +848,39 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
     user_id = update.effective_user.id if update.effective_user else 0
     user_lang = _get_user_lang(context, user_id)
 
+    # ── Step 0：功能介紹關鍵字檢測（固定回覆，不走 GPT）──
+    _INTRO_KEYWORDS = [
+        "你能做什麼", "你有什麼功能", "介紹一下", "你是誰",
+        "你是什麼", "有什麼功能", "有哪些功能", "能做什麼",
+        "你可以做什麼", "有什麼用", "怎麼用", "怎麼使用",
+        "你的功能", "有什麼服務", "能幫我什麼", "能幫什麼",
+        "what can you do", "what are your features", "help me", "introduce yourself",
+    ]
+    _INTRO_REPLY = (
+        "🤖 LA1 智能服務平台\n\n"
+        "✨ AI 體育分析 | 即時比分 | 勝率預測\n\n"
+        "🎰 539 彩票遊戲（L幣系統）\n\n"
+        "📊 我能幫你做什麼：\n"
+        "• 查詢任何賽事比分、賽程、排名\n"
+        "• WBC、NBA、足球等即時數據\n"
+        "• AI 分析勝率與賽事預測\n"
+        "• 每日 20:30 自動開獎 539 彩票\n\n"
+        "🛠 AI Bot 設計與自動化服務\n\n"
+        "可建立：\n"
+        "• AI 客服 Bot\n"
+        "• Telegram 社群 Bot\n"
+        "• AI 分析系統\n"
+        "• 自動推播\n"
+        "• 自動行銷\n\n"
+        "從 設計 → 開發 → 部署 → 維護\n"
+        "完整技術服務。\n\n"
+        "合作洽詢 👉 @LA1111_bot"
+    )
+    text_lower = text.lower()
+    if any(kw in text_lower for kw in _INTRO_KEYWORDS):
+        await reply_split(update, _INTRO_REPLY)
+        return
+
     try:
         from modules.ai_chat import (
             should_use_bot_function, get_ai_response, add_to_history,
@@ -1376,17 +1409,17 @@ def main():
     app.add_handler(CommandHandler("lrank",     lottery_rank_cmd))
     app.add_handler(CommandHandler("rules",     lottery_rules_cmd))
 
-    # ── 539 底部選單按鈕處理 ──
+    # ── 539 底部選單按鈕處理（group=-1 優先執行，且只處理精確匹配，不影響一般訊息）──
     app.add_handler(CallbackQueryHandler(lottery_callback_handler, pattern=r"^lot_"))
-    app.add_handler(MessageHandler(filters.Regex("^🎱下注$"),      bet_ui_cmd))
-    app.add_handler(MessageHandler(filters.Regex("^📋查詢下注$"),  lottery_history_cmd))
-    app.add_handler(MessageHandler(filters.Regex("^💰查詢L幣$"),  lottery_balance_cmd))
-    app.add_handler(MessageHandler(filters.Regex("^🏆排行榜$"),    lottery_rank_cmd))
-    app.add_handler(MessageHandler(filters.Regex("^📖遊戲規則$"),  lottery_rules_cmd))
-    app.add_handler(MessageHandler(filters.Regex("^🔙退出彩票$"),  cmd_lottery_exit))
+    app.add_handler(MessageHandler(filters.Regex("^🎱下注$"),      bet_ui_cmd),      group=-1)
+    app.add_handler(MessageHandler(filters.Regex("^📋查詢下注$"),  lottery_history_cmd), group=-1)
+    app.add_handler(MessageHandler(filters.Regex("^💰查詢L幣$"),  lottery_balance_cmd), group=-1)
+    app.add_handler(MessageHandler(filters.Regex("^🏆排行榜$"),    lottery_rank_cmd),  group=-1)
+    app.add_handler(MessageHandler(filters.Regex("^📖遊戲規則$"),  lottery_rules_cmd), group=-1)
+    app.add_handler(MessageHandler(filters.Regex("^🔙退出彩票$"),  cmd_lottery_exit),  group=-1)
     app.add_handler(CallbackQueryHandler(handle_style_callback, pattern=r"^style_"))
 
-    # ── 訊息處理 ──
+    # ── 訊息處理（group=0，在 539 Regex handler 之後，確保一般訊息正常到達）──
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT, handle_message))
     app.add_handler(MessageHandler(filters.ChatType.GROUPS  & filters.TEXT, handle_group_message))
