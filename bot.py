@@ -378,3 +378,62 @@ if __name__ == "__main__":
         print("Usage: python bot.py [morning|afternoon|evening|night|standings|sports_ai|all]")
         print("\nRunning morning preview as default...")
         task_morning_preview()
+
+def task_group_video_promo():
+    """
+    每4小時發送影片 + 7個按鈕到群組（V19.7 新增）
+    """
+    from config import GROUP_ID, BOT_TOKEN
+    import requests
+    
+    log("🎬 開始執行群組影片推播任務...")
+    
+    # 影片與按鈕設定
+    video_url = "https://files.manuscdn.com/user_upload_by_module/session_file/310419663032670396/zOYpATipTMNEkuCQ.mp4"
+    
+    # 建立按鈕 (Inline Keyboard)
+    # 由於 bot.py 是獨立運行的腳本，直接使用 Telegram Bot API 發送
+    game_url = "http://la1111.ofa168hk.com/"
+    cs_url = "https://t.me/yu_888yu"
+    
+    reply_markup = {
+        "inline_keyboard": [
+            [
+                {"text": "🇹🇼 台站", "url": "http://La1111.meta1788.com"},
+                {"text": "🇭🇰 U站", "url": "http://la1111.ofa168hk.com"}
+            ],
+            [
+                {"text": "🇰🇭 代理入口", "url": "http://agent.ofa168kh.com"}
+            ],
+            [
+                {"text": "🆕 免費開戶註冊", "url": game_url}
+            ],
+            [
+                {"text": "🎁 優惠領取聯絡客服", "url": cs_url}
+            ],
+            [
+                {"text": "🤝 商務合作", "url": "https://t.me/OFA168Abe1"}
+            ],
+            [
+                {"text": "🎮 立即進入遊戲", "url": game_url}
+            ]
+        ]
+    }
+    
+    api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendVideo"
+    payload = {
+        "chat_id": GROUP_ID,
+        "video": video_url,
+        "caption": "🏆 LA1 智能體育服務平台\n\n🔥 最專業的體育分析，最即時的比分數據！\n立即點擊下方按鈕開始體驗 👇",
+        "reply_markup": json.dumps(reply_markup)
+    }
+    
+    try:
+        resp = requests.post(api_url, json=payload, timeout=30)
+        result = resp.json()
+        if result.get("ok"):
+            log("✅ 群組影片推播成功")
+        else:
+            log(f"❌ 群組影片推播失敗: {result.get('description')}")
+    except Exception as e:
+        log(f"❌ 群組影片推播異常: {e}")

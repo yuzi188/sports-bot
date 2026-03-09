@@ -288,7 +288,7 @@ def _build_welcome_keyboard(user_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🤝 商務合作",   url="https://t.me/OFA168Abe1"),
         ],
         [
-            InlineKeyboardButton("🎮 立即進入遲戲", url=game_link),
+            InlineKeyboardButton("🎮 立即進入遊戲", url=game_link),
         ],
     ])
 

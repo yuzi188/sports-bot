@@ -5,6 +5,7 @@ import os
 # Telegram 設定
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 CHANNEL_ID = os.environ.get("CHANNEL_ID", "@LA11118")
+GROUP_ID   = os.environ.get("GROUP_ID", CHANNEL_ID)  # 群組推播目標，預設同頻道
 # ESPN API 基礎 URL
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports"
 # 支援的體育賽事

@@ -19,9 +19,10 @@ from bot import (
     task_evening_focus,
     task_night_review,
     task_weekly_standings,
+    task_group_video_promo,
     log,
 )
-from modules.live_broadcast import task_live_broadcast
+# from modules.live_broadcast import task_live_broadcast
 from telegram_sender import test_connection
 
 tz = pytz.timezone(TIMEZONE)
@@ -38,29 +39,29 @@ def setup_schedule():
     """設定排程"""
     schedule.clear()  # 避免重複呼叫時產生重複排程
 
-    # ── 每日分析推播（10:00 / 14:00 / 18:00 / 23:00）──
-    schedule.every().day.at(SCHEDULE["morning_preview"]).do(task_morning_preview)
-    schedule.every().day.at(SCHEDULE["afternoon_analysis"]).do(task_afternoon_analysis)
-    schedule.every().day.at(SCHEDULE["evening_focus"]).do(task_evening_focus)
-    schedule.every().day.at(SCHEDULE["night_review"]).do(task_night_review)
+    # ── 每日分析推播（已停用，僅保留任務定義供手動觸發） ──
+    # schedule.every().day.at(SCHEDULE["morning_preview"]).do(task_morning_preview)
+    # schedule.every().day.at(SCHEDULE["afternoon_analysis"]).do(task_afternoon_analysis)
+    # schedule.every().day.at(SCHEDULE["evening_focus"]).do(task_evening_focus)
+    # schedule.every().day.at(SCHEDULE["night_review"]).do(task_night_review)
+
+    # ── 每4小時影片推播（V19.7 新增） ──
+    schedule.every(4).hours.do(task_group_video_promo)
 
     # 每週一排名
     schedule.every().monday.at("09:00").do(task_weekly_standings)
 
-    # ── 每兩小時即時推播（直播中熱門賽事）──
-    # 若無進行中比賽，task_live_broadcast 會自動跳過，不發空訊息
-    for t in LIVE_BROADCAST_TIMES:
-        schedule.every().day.at(t).do(task_live_broadcast)
+    # ── 每兩小時即時推播（已停用） ──
+    # for t in LIVE_BROADCAST_TIMES:
+    #     schedule.every().day.at(t).do(task_live_broadcast)
 
     log("📅 排程已設定：")
-    log("  ── 每日分析推播 ──")
-    log("  10:00 - 今日賽程預覽")
-    log("  14:00 - 深度分析")
-    log("  18:00 - 傍晚焦點戰")
-    log("  23:00 - 賽後復盤")
+    log("  ── 群組推播 ──")
+    log("  每 4 小時 - 影片 + 7個按鈕")
     log("  每週一 09:00 - 聯賽排名")
-    log("  ── 每兩小時即時推播 ──")
-    log(f"  {', '.join(LIVE_BROADCAST_TIMES)} - 直播中熱門賽事")
+    log("  ── 已停用 ──")
+    log("  每日分析推播 (10:00, 14:00, 18:00, 23:00)")
+    log("  每兩小時即時推播")
 
 
 def run():
