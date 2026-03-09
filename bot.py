@@ -399,23 +399,26 @@ def task_group_video_promo():
     reply_markup = {
         "inline_keyboard": [
             [
-                {"text": "🇹🇼 台站", "url": "http://La1111.meta1788.com"},
-                {"text": "🇭🇰 U站", "url": "http://la1111.ofa168hk.com"}
+                {"text": "🇹🇼 台站｜立即註冊", "url": "http://La1111.meta1788.com"},
+                {"text": "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜USDT專區", "url": "http://la1111.ofa168hk.com"}
             ],
             [
                 {"text": "🇰🇭 代理入口", "url": "http://agent.ofa168kh.com"}
             ],
             [
-                {"text": "🆕 免費開戶註冊", "url": game_url}
+                {"text": "🆕 免費開戶註冊", "url": "http://La1111.meta1788.com"}
             ],
             [
-                {"text": "🎁 優惠領取聯絡客服", "url": cs_url}
+                {"text": "🎁 優惠領取｜聯絡客服", "url": "https://t.me/yu_888yu"}
             ],
             [
                 {"text": "🤝 商務合作", "url": "https://t.me/OFA168Abe1"}
             ],
             [
-                {"text": "🎮 立即進入遊戲", "url": game_url}
+                {"text": "🎮 立即進入遊戲", "url": "http://la1111.ofa168hk.com/"}
+            ],
+            [
+                {"text": "🎱 去 Bot 玩 539", "url": "https://t.me/LA1111_bot?start=539"}
             ]
         ]
     }

@@ -75,10 +75,19 @@ async def draw_job(context):
 
     # 推送到群組（使用 sports-bot 的 GROUP_ID）
     from config import GROUP_ID
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     if GROUP_ID:
         try:
-            await context.bot.send_message(chat_id=GROUP_ID, text=msg)
+            # 加入 539 下注按鈕
+            reply_markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🎱 去 Bot 下注", url="https://t.me/LA1111_bot?start=539")]
+            ])
+            await context.bot.send_message(
+                chat_id=GROUP_ID, 
+                text=msg, 
+                reply_markup=reply_markup
+            )
             logger.info(f"[draw_job] 開獎結果已推送到群組 {GROUP_ID}")
         except Exception as e:
             logger.error(f"[draw_job] 群組推送失敗: {e}")
