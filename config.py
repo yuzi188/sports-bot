@@ -1,4 +1,11 @@
+"""
+config.py - LA1 Bot 配置
+V20.20 修復：validate_config 不再因 OPENAI_API_KEY 缺失而 raise RuntimeError
+"""
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
@@ -14,11 +21,19 @@ BUSINESS_CONTACT = os.getenv("BUSINESS_CONTACT", "@OFA168Abe1").strip()
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Taipei").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 
+# ESPN API 基礎 URL
+ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports"
+
+
 def validate_config():
-    missing = []
+    """
+    驗證必要設定。
+    - BOT_TOKEN 缺失：raise RuntimeError（Bot 無法運作）
+    - OPENAI_API_KEY 缺失：僅印警告，不崩潰（AI 功能降級為 FAQ 回覆）
+    """
     if not BOT_TOKEN:
-        missing.append("BOT_TOKEN")
+        raise RuntimeError("Missing required environment variable: BOT_TOKEN")
     if not OPENAI_API_KEY:
-        missing.append("OPENAI_API_KEY")
-    if missing:
-        raise RuntimeError("Missing required environment variables: " + ", ".join(missing))
+        logger.warning("⚠️  OPENAI_API_KEY 未設定，AI 功能將降級使用 FAQ 回覆")
+    else:
+        logger.info("✅ OPENAI_API_KEY 已設定")
