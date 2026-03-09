@@ -589,8 +589,8 @@ def get_ai_response(user_id: int, user_message: str, user_lang: str = "zh_tw") -
         logger.error(f"AI 客服錯誤: {e}", exc_info=True)
         cs_guide = _get_cs_guide(user_lang)
         if user_lang == "en":
-            return f"Sorry Boss, I'm a bit overwhelmed right now 😅 Please try again later.\n\n{cs_guide}"
-        return f"老闆您好，我現在有點忙不過來 😅 請稍後再試。\n\n{cs_guide}"
+            return f"Hello Boss! Please feel free to ask me anything. For account or game issues, contact @yu_888yu\n\n{cs_guide}"
+        return f"老闆您好，請問有什麼可以幫您的？如有帳號或遊戲問題，歡迎聯繫客服 @yu_888yu\n\n{cs_guide}"
 
 
 def generate_sports_reply(

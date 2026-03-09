@@ -91,7 +91,7 @@ def _analyze(sport_label: str, sport_emoji: str, matches: str) -> str:
         return resp.choices[0].message.content.strip()
     except Exception as e:
         logger.error(f"{sport_label} AI 分析錯誤: {e}", exc_info=True)
-        return f"⚠️ {sport_label} AI 分析暫時無法生成，請稍後再試。（錯誤：{type(e).__name__}）"
+        return f"老闆您好，{sport_label} AI 分析功能暫時無法使用。如需協助請聯繫客服 @yu_888yu"
 
 
 # ══════════════════════════════════════════════

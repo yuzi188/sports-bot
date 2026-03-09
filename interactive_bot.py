@@ -264,7 +264,7 @@ async def handle_style_callback(update: Update, context: ContextTypes.DEFAULT_TY
             await query.edit_message_text(f"✅ 互動習慣已設定為：{style_labels[style_code]}")
         except Exception as e:
             logger.error(f"設定互動習慣失敗: {e}")
-            await query.edit_message_text("❌ 設定失敗，請稍後再試")
+            await query.edit_message_text("老闆您好，語言設定暫時無法更新，如需協助請聯繫客服 @yu_888yu")
 
 
 async def cmd_lottery_exit(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -569,7 +569,7 @@ async def cmd_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply_split(update, ai_reply)
     except Exception as e:
         logger.error(f"Analyze error: {e}", exc_info=True)
-        await reply(update, "😅 抱歉，AI 分析暫時無法使用，請稍後再試！")
+        await reply(update, "老闆您好，AI 分析功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
 
 
 async def cmd_odds(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -607,7 +607,7 @@ async def cmd_football_analyze(update: Update, context: ContextTypes.DEFAULT_TYP
         await reply_split(update, f"{sep}\n⚽ 今日足球 AI 分析\n{sep}\n\n{analysis}\n\n{sep}\n📡 世界體育數據室\n⚠️ 分析僅供參考，請理性投注")
     except Exception as e:
         logger.error(f"Football analyze error: {e}", exc_info=True)
-        await reply(update, "😅 足球分析暫時無法使用，請稍後再試！")
+        await reply(update, "老闆您好，足球分析功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
 
 
 async def cmd_baseball_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -629,7 +629,7 @@ async def cmd_baseball_analyze(update: Update, context: ContextTypes.DEFAULT_TYP
         await reply_split(update, f"{sep}\n⚾ 今日棒球 AI 分析\n{sep}\n\n{analysis}\n\n{sep}\n📡 世界體育數據室\n⚠️ 分析僅供參考，請理性投注")
     except Exception as e:
         logger.error(f"Baseball analyze error: {e}", exc_info=True)
-        await reply(update, "😅 棒球分析暫時無法使用，請稍後再試！")
+        await reply(update, "老闆您好，棒球分析功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
 
 
 async def cmd_basketball_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -651,7 +651,7 @@ async def cmd_basketball_analyze(update: Update, context: ContextTypes.DEFAULT_T
         await reply_split(update, f"{sep}\n🏀 今日籃球 AI 分析\n{sep}\n\n{analysis}\n\n{sep}\n📡 世界體育數據室\n⚠️ 分析僅供參考，請理性投注")
     except Exception as e:
         logger.error(f"Basketball analyze error: {e}", exc_info=True)
-        await reply(update, "😅 籃球分析暫時無法使用，請稍後再試！")
+        await reply(update, "老闆您好，籃球分析功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
 
 
 async def cmd_all_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -677,7 +677,7 @@ async def cmd_all_analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply_split(update, f"{sep}\n🔥 三種運動綜合 AI 分析\n📅 {now_str}\n{sep}\n\n{analysis}\n\n{sep}\n📡 世界體育數據室\n⚠️ 分析僅供參考，請理性投注")
     except Exception as e:
         logger.error(f"All analyze error: {e}", exc_info=True)
-        await reply(update, "😅 綜合分析暫時無法使用，請稍後再試！")
+        await reply(update, "老闆您好，綜合分析功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
 
 
 async def cmd_winrate(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -719,7 +719,7 @@ async def cmd_winrate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply(update, f"{sep}\n{panel}\n{sep}\n📡 世界體育數據室\n⚠️ 數據僅供參考")
     except Exception as e:
         logger.error(f"Winrate error: {e}", exc_info=True)
-        await reply(update, "😅 勝率統計暫時無法使用，請稍後再試！")
+        await reply(update, "老闆您好，勝率統計功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
 
 
 # ══════════════════════════════════════════════
@@ -736,7 +736,7 @@ async def cmd_myfav(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply_split(update, summary)
     except Exception as e:
         logger.error(f"myfav error: {e}", exc_info=True)
-        await reply(update, "😅 個人喜好查詢暫時無法使用，請稍後再試！")
+        await reply(update, "老闆您好，個人喜好查詢功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
 
 
 async def cmd_style(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -771,7 +771,7 @@ async def cmd_rank(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply_split(update, msg)
     except Exception as e:
         logger.error(f"rank error: {e}", exc_info=True)
-        await reply(update, "😅 排行榜暫時無法使用，請稍後再試！")
+        await reply(update, "老闆您好，排行榜功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
 
 
 async def cmd_myscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -785,7 +785,7 @@ async def cmd_myscore(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply_split(update, msg)
     except Exception as e:
         logger.error(f"myscore error: {e}", exc_info=True)
-        await reply(update, "😅 積分查詢暫時無法使用，請稍後再試！")
+        await reply(update, "老闆您好，積分查詢功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
 
 
 async def handle_poll_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -829,7 +829,7 @@ async def cmd_insights(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply_split(update, snapshot)
     except Exception as e:
         logger.error(f"insights error: {e}", exc_info=True)
-        await reply(update, "😅 趨勢洞察暫時無法使用，請稍後再試！")
+        await reply(update, "老闆您好，趨勢洞察功能暫時無法使用。如需協助請聯繫客服 @yu_888yu")
 
 
 # ══════════════════════════════════════════════
@@ -1099,7 +1099,7 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
                 await handle_score_query(update, text, user_id=user_id)
             except Exception as e2:
                 logger.error(f"score query fallback error: {e2}")
-                await reply(update, "❌ 查詢失敗，請稍後再試")
+                await reply(update, "老闆您好，查詢暫時無法取得資料，如需協助請聯繫客服 @yu_888yu")
         else:
             try:
                 from modules.ai_chat import get_ai_response
@@ -1107,7 +1107,7 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
                 await reply_split(update, ai_reply)
             except Exception as e2:
                 logger.error(f"AI fallback error: {e2}", exc_info=True)
-                await reply(update, "😅 抱歉，系統暫時無法回應，請稍後再試！")
+                await reply(update, "老闆您好，請問有什麼可以幫您的？如有帳號或遊戲問題，歡迎聯繫客服 @yu_888yu")
 
 
 async def _maybe_send_recommendation(update: Update, user_id: int):
@@ -1395,9 +1395,7 @@ async def handle_score_query(
 
     except Exception as e:
         logger.error(f"Query error: {e}", exc_info=True)
-        await reply(update, "❌ 查詢失敗，請稍後再試")
-
-
+        await reply(update, "老闆您好，查詢暫時無法取得資料，請稍後再試，或聯繫客服 @yu_888yu 協助。")
 async def handle_details_query(update: Update, query: str):
     """處理即時詳細資料查詢"""
     logger.info(f"即時詳細資料查詢: {query}")
