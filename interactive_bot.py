@@ -1066,8 +1066,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     logger.info(f"[私訊] {text}")
 
-    # ── 每日第一次訊息：發送歡迎影片 + inline keyboard ──
     user_id = update.effective_user.id if update.effective_user else 0
+
+    # ── 安全檢查（速率限制 / Prompt Injection / 訊息長度）──
+    from modules.security import check_message as _sec_check
+    sec = _sec_check(user_id, text)
+    if not sec.allowed:
+        logger.info(f"[安全] 私訊被擋截 user_id={user_id} reason={sec.reason}")
+        await update.message.reply_text(sec.reply_text)
+        return
+
+    # ── 每日第一次訊息：發送歡迎影片 + inline keyboard ──
     if user_id:
         try:
             from modules.user_preferences import should_send_daily_welcome
@@ -1088,8 +1097,17 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
     text = update.message.text.strip()
     logger.info(f"[群組] {text}")
 
-    # ── 每日第一次訊息：發送歡迎影片 + inline keyboard ──
     user_id = update.effective_user.id if update.effective_user else 0
+
+    # ── 安全檢查（速率限制 / Prompt Injection / 訊息長度）──
+    from modules.security import check_message as _sec_check
+    sec = _sec_check(user_id, text)
+    if not sec.allowed:
+        logger.info(f"[安全] 群組訊息被擋截 user_id={user_id} reason={sec.reason}")
+        await update.message.reply_text(sec.reply_text)
+        return
+
+    # ── 每日第一次訊息：發送歡迎影片 + inline keyboard ──
     if user_id:
         try:
             from modules.user_preferences import should_send_daily_welcome
