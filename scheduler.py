@@ -1,87 +1,48 @@
-"""
-排程管理器 - 使用 schedule 庫管理定時任務
-v2：新增每兩小時即時推播（直播中熱門賽事）
-"""
-
-import sys
-import os
+import threading
 import time
 import schedule
-from datetime import datetime
-import pytz
+from telegram_sender import send_message
+from config import GAME_URL_TW, HUMAN_SUPPORT, BUSINESS_CONTACT
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram_sender import send_photo
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_PHOTO = "https://i.imgur.com/8yKQF3K.png"
 
-from config import TIMEZONE, SCHEDULE
-from bot import (
-    task_morning_preview,
-    task_afternoon_analysis,
-    task_evening_focus,
-    task_night_review,
-    task_weekly_standings,
-    task_group_video_promo,
-    log,
-)
-# from modules.live_broadcast import task_live_broadcast
-from telegram_sender import test_connection
+def promo_post():
+    text = f"🔥 LA1 限時活動\n\n首儲1000送1000\n\n立即開始：\n{GAME_URL_TW}"
+    send_message(text)
 
-tz = pytz.timezone(TIMEZONE)
+def agent_post():
+    text = f"🤝 代理招募中\n\n高額分潤 / 專屬後台 / 長期合作\n\n商務合作：{BUSINESS_CONTACT}"
+    send_message(text)
 
-# 每兩小時推播的時間點（台灣時間）
-# 與每日分析（10:00 / 14:00 / 18:00）重疊時兩者獨立執行，不衝突
-LIVE_BROADCAST_TIMES = [
-    "10:00", "12:00", "14:00", "16:00",
-    "18:00", "20:00", "22:00", "00:00",
-]
+def game_recommend_post():
+    caption = """
+🎰 今日遊戲推薦
 
+🔥 熱門電子
+🎲 真人娛樂
+⚽ 體育投注
 
-def setup_schedule():
-    """設定排程"""
-    schedule.clear()  # 避免重複呼叫時產生重複排程
+👇 立即體驗
+"""
+    keyboard = {
+        "inline_keyboard": [
+            [{"text":"🎮 立即進入台站","url": GAME_URL_TW}],
+            [{"text":"👑 聯繫客服","url": f"https://t.me/{HUMAN_SUPPORT.lstrip('@')}"}]
+        ]
+    }
+    send_photo(DEFAULT_PHOTO, caption, keyboard)
 
-    # ── 每日分析推播（已停用，僅保留任務定義供手動觸發） ──
-    # schedule.every().day.at(SCHEDULE["morning_preview"]).do(task_morning_preview)
-    # schedule.every().day.at(SCHEDULE["afternoon_analysis"]).do(task_afternoon_analysis)
-    # schedule.every().day.at(SCHEDULE["evening_focus"]).do(task_evening_focus)
-    # schedule.every().day.at(SCHEDULE["night_review"]).do(task_night_review)
-
-    # ── 每4小時影片推播（V19.7 新增） ──
-    schedule.every(4).hours.do(task_group_video_promo)
-
-    # 每週一排名
-    schedule.every().monday.at("09:00").do(task_weekly_standings)
-
-    # ── 每兩小時即時推播（已停用） ──
-    # for t in LIVE_BROADCAST_TIMES:
-    #     schedule.every().day.at(t).do(task_live_broadcast)
-
-    log("📅 排程已設定：")
-    log("  ── 群組推播 ──")
-    log("  每 4 小時 - 影片 + 7個按鈕")
-    log("  每週一 09:00 - 聯賽排名")
-    log("  ── 已停用 ──")
-    log("  每日分析推播 (10:00, 14:00, 18:00, 23:00)")
-    log("  每兩小時即時推播")
-
-
-def run():
-    """啟動排程"""
-    log("🤖 世界體育數據室 Bot 啟動中...")
-
-    if not test_connection():
-        log("❌ Bot 連接失敗！")
-        sys.exit(1)
-
-    log("✅ Bot 連接成功")
-
-    setup_schedule()
-
-    log("⏳ 等待排程執行...")
+def run_scheduler():
+    schedule.every().day.at("12:00").do(promo_post)
+    schedule.every().day.at("18:00").do(game_recommend_post)
+    schedule.every().day.at("21:00").do(agent_post)
 
     while True:
         schedule.run_pending()
         time.sleep(30)
 
-
-if __name__ == "__main__":
-    run()
+def start_scheduler():
+    t = threading.Thread(target=run_scheduler, daemon=True)
+    t.start()

@@ -1,31 +1,43 @@
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from config import BOT_TOKEN, validate_config
+from telegram_ui import main_menu
+from ai_service import ai_reply
+from scheduler import start_scheduler
+from sports_service import build_sports_digest
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = """
+🐼 LA1 智能服務平台
+
+AI客服｜AI體育分析｜娛樂城入口
+
+🔥 首儲1000送1000（限時活動）
+
+👇 點擊下方選擇服務
 """
-主程式入口 - 啟動互動式 Bot
-V20.13: 簡化啟動流程，移除排程器 thread，直接啟動 interactive_bot
-"""
-import sys
-import os
+    await update.message.reply_text(text, reply_markup=main_menu())
 
-# 確保可以導入本地模組
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+async def sports(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = await build_sports_digest()
+    await update.message.reply_text(text)
 
-import interactive_bot
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text or ""
+    reply = await ai_reply(user_text)
+    await update.message.reply_text(reply)
 
+def main():
+    validate_config()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("sports", sports))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    start_scheduler()
+
+    print("🤖 LA1_BOT_V15_ENTERPRISE running")
+    app.run_polling()
 
 if __name__ == "__main__":
-    print("🤖 LA1 智能服務平台 Bot 啟動中...", flush=True)
-
-    # 確認必要環境變數
-    bot_token = os.environ.get("BOT_TOKEN", "")
-    if not bot_token:
-        print("❌ 錯誤：BOT_TOKEN 環境變數未設定！", flush=True)
-        sys.exit(1)
-
-    openai_key = os.environ.get("OPENAI_API_KEY", "")
-    if not openai_key:
-        print("⚠️  警告：OPENAI_API_KEY 未設定，AI 分析功能將無法使用", flush=True)
-
-    print("✅ 環境變數確認完成，啟動 Bot...", flush=True)
-
-    # 直接啟動互動式 Bot
-    # interactive_bot.main() 包含完整的 handler 註冊和 run_polling
-    interactive_bot.main()
+    main()
