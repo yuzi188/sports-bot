@@ -865,11 +865,11 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
 
     # ── Step 0：功能介紹關鍵字檢測（固定回覆，不走 GPT）──
     _INTRO_KEYWORDS = [
-        "你能做什麼", "你有什麼功能", "介紹一下", "你是誰",
+        "你能做什麼", "你有什麼功能", "介紹一下",
         "你是什麼", "有什麼功能", "有哪些功能", "能做什麼",
         "你可以做什麼", "有什麼用", "怎麼用", "怎麼使用",
         "你的功能", "有什麼服務", "能幫我什麼", "能幫什麼",
-        "what can you do", "what are your features", "help me", "introduce yourself",
+        "what can you do", "what are your features", "introduce yourself",
     ]
     _INTRO_REPLY = (
         "🤖 LA1 智能服務平台\n\n"
@@ -984,7 +984,8 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
             await reply_split(update, ai_reply)
             return
 
-        # ── Step 3：體育問題 → GPT 意圖識別 ──
+        # ── Step 3：所有訊息（體育/聊天）→ GPT 意圖識別 ──
+        # 注意：msg_type 可能是 "sports" 或 "chat"，兩者都必須有回覆
         if msg_type in ("sports", "chat"):
             intent = should_use_bot_function(user_id, text)
             action = intent.get("action", "chat")
@@ -1100,10 +1101,14 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
                 _record_user_query(user_id, text, "team")
 
             else:
-                # action == "chat" → 走 GPT 客服助理
+                # action == "chat" 或其他未識別動作 → 走 GPT 客服助理
+                # 這是所有一般訊息（嗨、你好、有什麼遊戲等）的最終回覆路徑
+                logger.info(f"[dispatch] → 走 GPT 客服助理 text='{text}'")
                 ai_reply = get_ai_response(user_id, text, user_lang=user_lang)
                 ai_reply = _append_cs_contact(ai_reply)
                 await reply_split(update, ai_reply)
+                add_to_history(user_id, "user", text)
+                add_to_history(user_id, "assistant", ai_reply[:200])
 
         # ── V18：查詢後主動推薦（僅私訊，避免頻道刷屏）──
         if update.message and update.message.chat.type == "private":
