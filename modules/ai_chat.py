@@ -601,6 +601,13 @@ def generate_sports_reply(
 
     lang_instruction = _LANG_INSTRUCTION.get(user_lang, _LANG_INSTRUCTION["zh_tw"])
 
+    # ── 偵測 ESPN 查無資料：改用 GPT 知識分析模式 ──
+    _NO_DATA_SIGNALS = [
+        "找不到", "查不到", "沒有找到", "查無", "目前沒有",
+        "沒有相關比賽", "未找到", "no result", "not found",
+    ]
+    _is_no_data = any(sig in raw_data for sig in _NO_DATA_SIGNALS)
+
     # 根據 action 調整提示語
     action_context = {
         "score":    f"用戶查詢「{query}」的即時比分/今日賽事",
@@ -613,7 +620,22 @@ def generate_sports_reply(
         "analyze":  f"用戶要求 AI 分析「{query}」",
     }.get(action, f"用戶查詢「{query}」")
 
-    prompt = f"""用戶訊息：「{user_message}」
+    if _is_no_data:
+        # ESPN 查無資料 → 改用 GPT 自身知識分析
+        logger.info(f"[GPT 知識分析] ESPN 查無資料，改用 GPT 分析 user={user_id} query={query}")
+        prompt = f"""用戶訊息：「{user_message}」
+查詢情境：{action_context}
+
+ESPN 目前沒有此賽事的即時資料。
+請根據你的知識分析這場比賽，包括兩隊近期狀態、歷史對戰、勝率預測，並說明這是 AI 分析而非即時數據。{lang_instruction}
+
+注意：
+- 開頭說明「目前 ESPN 沒有此賽事的即時資料，以下為 AI 分析」
+- 分析兩隊近期狀態、歷史對戰紀錄、勝率預測
+- 語氣專業且對用戶有幫助
+- 總長度 200-400 字"""
+    else:
+        prompt = f"""用戶訊息：「{user_message}」
 查詢情境：{action_context}
 
 以下是從 ESPN API 取得的原始賽事資料：
