@@ -881,6 +881,70 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
         await reply_split(update, _INTRO_REPLY)
         return
 
+    # ── Step 1：代理 / 商務合作關鍵字 ──
+    _AGENT_KEYWORDS = ["代理", "合作", "招商", "推廣", "加盟", "代理合作"]
+    if any(kw in text_lower for kw in _AGENT_KEYWORDS):
+        await reply_split(update,
+            "老闆您好 👋\n\n"
+            "代理 / 商務合作請聯繫：\n\n"
+            "🤝 @OFA168Abe1"
+        )
+        return
+
+    # ── Step 2：平台規章 FAQ（先於一般客服關鍵字，避免多帳號/USDT/超商被欸消）──
+    if "多帳號" in text_lower:
+        await reply_split(update,
+            "老闆您好 👋\n\n"
+            "一位會員僅可使用一組帳號，請勿重複註冊。"
+        )
+        return
+    if "未滿18" in text_lower or "未满18" in text_lower:
+        await reply_split(update,
+            "老闆您好 👋\n\n"
+            "本平台僅提供年滿 18 歲會員使用，請確認您符合年齡規定。"
+        )
+        return
+    if "usdt" in text_lower:
+        await reply_split(update,
+            "老闆您好 👋\n\n"
+            "USDT 儲值不會自動上分，請提供轉帳明細給客服 👑 @yu_888yu 協助上分。"
+        )
+        return
+    if "超商" in text_lower:
+        await reply_split(update,
+            "老闆您好 👋\n\n"
+            "超商代碼支付約 10–20 分鐘會自動上分，請耐心等候即可。"
+        )
+        return
+
+    # ── Step 3：人工客服關鍵字（金流 / 帳號問題）──
+    _CS_KEYWORDS_DIRECT = [
+        "儲值", "充值", "上分", "提款", "提現",
+        "託售", "帳號", "登入", "密碼", "異常",
+        "退款", "銀行",
+    ]
+    if any(kw in text_lower for kw in _CS_KEYWORDS_DIRECT):
+        await reply_split(update,
+            "老闆您好 👋\n\n"
+            "此問題需要客服協助處理\n\n"
+            "請聯繫客服：\n\n"
+            "👑 @yu_888yu"
+        )
+        return
+
+    # ── Step 4：註冊 / 開戶 FAQ ──
+    _REG_KEYWORDS = ["註冊", "我要註冊", "如何註冊", "怎麼開戶", "開戶", "註冊入口"]
+    if any(kw in text_lower for kw in _REG_KEYWORDS):
+        await reply_split(update,
+            "老闆您好 👋\n\n"
+            "請使用以下入口註冊：\n\n"
+            "🇹🇼 台站\n"
+            "http://La1111.meta1788.com\n\n"
+            "🌏 U站\n"
+            "http://la1111.ofa168hk.com"
+        )
+        return
+
     try:
         from modules.ai_chat import (
             should_use_bot_function, get_ai_response, add_to_history,
