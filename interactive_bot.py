@@ -309,7 +309,7 @@ def _build_welcome_keyboard(user_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("🇭🇰 U站",    url="http://la1111.ofa168kh.com"),
         ],
         [
-            InlineKeyboardButton("🇰🇭 代理入口", url="http://agent.ofa168kh.com"),
+            InlineKeyboardButton("🇰🇭 代理入口", url="http://la1111.ofa168kh.com"),
         ],
         [
             InlineKeyboardButton("🆕 免費開戶註冊", url=game_link),
@@ -397,7 +397,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "🌐 平台入口：\n"
                 "🇹🇼 台站｜La1111.meta1788.com\n"
                 "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com\n"
-                "🇰🇭 代理｜agent.ofa168kh.com"
+                "🇰🇭 代理｜la1111.ofa168kh.com"
             )
             await update.channel_post.reply_text(welcome_text)
         return
@@ -429,7 +429,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🌐 平台入口：\n"
         "🇹🇼 台站｜La1111.meta1788.com\n"
         "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com\n"
-        "🇰🇭 代理｜agent.ofa168kh.com\n\n"
+        "🇰🇭 代理｜la1111.ofa168kh.com\n\n"
         "🤝 商務合作：https://t.me/OFA168Abe1\n\n"
         "🎰 輸入 /539 開始 L幣 539 彩票！\n\n"
         "🎮 點擊下方按鈕立即進入！"
@@ -1294,7 +1294,7 @@ async def send_first_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "🌐 平台入口：\n"
         "🇹🇼 台站｜La1111.meta1788.com\n"
         "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com\n"
-        "🇰🇭 代理｜agent.ofa168kh.com\n\n"
+        "🇰🇭 代理｜la1111.ofa168kh.com\n\n"
         "🤝 商務合作：https://t.me/OFA168Abe1\n\n"
         "🎮 點擊下方【遊戲】按鈕立即進入！"
     )

@@ -403,7 +403,7 @@ def task_group_video_promo():
                 {"text": "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜USDT專區", "url": "http://la1111.ofa168kh.com"}
             ],
             [
-                {"text": "🇰🇭 代理入口", "url": "http://agent.ofa168kh.com"}
+                {"text": "🇰🇭 代理入口", "url": "http://la1111.ofa168kh.com"}
             ],
             [
                 {"text": "🆕 免費開戶註冊", "url": "http://La1111.meta1788.com"}
