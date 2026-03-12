@@ -1565,18 +1565,6 @@ def main():
     except Exception as e:
         logger.error(f"[簽到] 積分資料庫初始化失敗: {e}")
 
-    # ── 強制清除舊的 polling session，避免 Conflict ──
-    try:
-        import httpx
-        _resp = httpx.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook",
-            json={"drop_pending_updates": True},
-            timeout=10,
-        )
-        logger.info(f"[啟動] deleteWebhook 結果: {_resp.json()}")
-    except Exception as _e:
-        logger.warning(f"[啟動] deleteWebhook 失敗（可忽略）: {_e}")
-
     app = Application.builder().token(BOT_TOKEN).build()
 
     # ── 基本指令 ──
@@ -1655,11 +1643,30 @@ def main():
     except Exception as e:
         logger.error(f"[539] 開獎排程設定失敗: {e}")
 
-    logger.info("Bot V21.0 LA1 SPORTS AI PLATFORM 已啟動（全面 GPT + 簽到積分 + 預測遊戲 + AI 推播 + 539 彩票）...")
-    app.run_polling(
-        allowed_updates=["message", "callback_query", "poll_answer", "chat_member"],
-        drop_pending_updates=True,  # 避免啟動時被舊訊息或 webhook 衝突卡住
-    )
+    logger.info("Bot V21.0 LA1 SPORTS AI PLATFORM 已啟動（全面 GPT + 簽到積分 + 預測遅戲 + AI 推播 + 539 彩票）...")
+
+    # ── Webhook 模式（避免與其他實例 Conflict）──
+    WEBHOOK_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+    PORT = int(os.environ.get("PORT", 8443))
+
+    if WEBHOOK_DOMAIN:
+        WEBHOOK_URL = f"https://{WEBHOOK_DOMAIN}/webhook"
+        logger.info(f"[啟動] Webhook 模式：{WEBHOOK_URL} port={PORT}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path="/webhook",
+            webhook_url=WEBHOOK_URL,
+            allowed_updates=["message", "callback_query", "poll_answer", "chat_member"],
+            drop_pending_updates=True,
+        )
+    else:
+        # 本地開發或未設定 RAILWAY_PUBLIC_DOMAIN 時使用 polling
+        logger.info("[啟動] Polling 模式（未偵測到 RAILWAY_PUBLIC_DOMAIN）")
+        app.run_polling(
+            allowed_updates=["message", "callback_query", "poll_answer", "chat_member"],
+            drop_pending_updates=True,
+        )
 
 
 if __name__ == "__main__":
