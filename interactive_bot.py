@@ -1565,6 +1565,18 @@ def main():
     except Exception as e:
         logger.error(f"[簽到] 積分資料庫初始化失敗: {e}")
 
+    # ── 強制清除舊的 polling session，避免 Conflict ──
+    try:
+        import httpx
+        _resp = httpx.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook",
+            json={"drop_pending_updates": True},
+            timeout=10,
+        )
+        logger.info(f"[啟動] deleteWebhook 結果: {_resp.json()}")
+    except Exception as _e:
+        logger.warning(f"[啟動] deleteWebhook 失敗（可忽略）: {_e}")
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     # ── 基本指令 ──
