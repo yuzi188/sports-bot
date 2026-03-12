@@ -1,6 +1,6 @@
 """
 三種運動 AI 分析模組 V2 - 足球 / 棒球 / 籃球
-升級版：使用 gemini-2.5-flash 自行搜尋今日最新賽事資訊後進行深度分析
+升級版：使用 gpt-4o-mini 自行搜尋今日最新賽事資訊後進行深度分析
 
 分析內容：
   1. 今日賽程與焦點比賽
@@ -52,12 +52,12 @@ def _get_today_str() -> tuple[str, str]:
 
 
 # ══════════════════════════════════════════════
-#  升級版通用分析函數（gemini-2.5-flash 搜尋 + 分析）
+#  升級版通用分析函數（gpt-4o-mini 搜尋 + 分析）
 # ══════════════════════════════════════════════
 
 def _analyze_with_search(sport_label: str, sport_emoji: str, matches_hint: str = "") -> str:
     """
-    升級版 AI 分析：讓 gemini-2.5-flash 自行搜尋今日最新賽事資訊後進行深度分析。
+    升級版 AI 分析：讓 gpt-4o-mini 自行搜尋今日最新賽事資訊後進行深度分析。
 
     Args:
         sport_label:  運動名稱（如「足球」「棒球」「籃球」）
@@ -139,7 +139,7 @@ def _analyze_with_search(sport_label: str, sport_emoji: str, matches_hint: str =
 
     try:
         resp = client.chat.completions.create(
-            model="gemini-2.5-flash",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
@@ -210,7 +210,7 @@ def _analyze_fallback(sport_label: str, sport_emoji: str, matches: str) -> str:
 
 def analyze_football(matches: str) -> str:
     """
-    足球賽事 AI 分析（升級版：gemini-2.5-flash 搜尋 + 分析）
+    足球賽事 AI 分析（升級版：gpt-4o-mini 搜尋 + 分析）
     Args:
         matches: ESPN API 取得的足球賽事文字（作為補充參考）
     """
@@ -219,7 +219,7 @@ def analyze_football(matches: str) -> str:
 
 def analyze_baseball(matches: str) -> str:
     """
-    棒球賽事 AI 分析（升級版：gemini-2.5-flash 搜尋 + 分析）
+    棒球賽事 AI 分析（升級版：gpt-4o-mini 搜尋 + 分析）
     Args:
         matches: ESPN API 取得的棒球賽事文字（作為補充參考）
     """
@@ -228,7 +228,7 @@ def analyze_baseball(matches: str) -> str:
 
 def analyze_basketball(matches: str) -> str:
     """
-    籃球賽事 AI 分析（升級版：gemini-2.5-flash 搜尋 + 分析）
+    籃球賽事 AI 分析（升級版：gpt-4o-mini 搜尋 + 分析）
     Args:
         matches: ESPN API 取得的籃球賽事文字（作為補充參考）
     """
@@ -279,7 +279,7 @@ def analyze_all_sports(football_matches: str, baseball_matches: str, basketball_
 
     try:
         resp = client.chat.completions.create(
-            model="gemini-2.5-flash",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
