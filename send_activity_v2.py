@@ -27,11 +27,11 @@ caption = """【WBC連勝王挑戰開啟】
 reply_markup = {
     "inline_keyboard": [
         [
-            {"text": "🇹🇼 台站｜立即註冊", "url": "http://La1111.meta1788.com"},
-            {"text": "🇭🇰 U站｜USDT專區", "url": "http://la1111.ofa168kh.com"}
+            {"text": "🇹🇼 台站｜立即註冊", "url": "http://La1111.meta1788.com/"},
+            {"text": "🇭🇰 U站｜USDT專區", "url": "http://la1111.ofa168kh.com/"}
         ],
         [
-            {"text": "🇰🇭 代理入口", "url": "http://la1111.ofa168kh.com"}
+            {"text": "🇰🇭 代理入口", "url": "http://la1111.ofa168kh.com/"}
         ]
     ]
 }

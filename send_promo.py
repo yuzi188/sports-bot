@@ -8,14 +8,14 @@ VIDEO_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/31041
 reply_markup = {
     "inline_keyboard": [
         [
-            {"text": "🇹🇼 台站｜立即註冊", "url": "http://La1111.meta1788.com"},
-            {"text": "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜USDT專區", "url": "http://la1111.ofa168kh.com"}
+            {"text": "🇹🇼 台站｜立即註冊", "url": "http://La1111.meta1788.com/"},
+            {"text": "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜USDT專區", "url": "http://la1111.ofa168kh.com/"}
         ],
         [
-            {"text": "🇰🇭 代理入口", "url": "http://la1111.ofa168kh.com"}
+            {"text": "🇰🇭 代理入口", "url": "http://la1111.ofa168kh.com/"}
         ],
         [
-            {"text": "🆕 免費開戶註冊", "url": "http://La1111.meta1788.com"}
+            {"text": "🆕 免費開戶註冊", "url": "http://La1111.meta1788.com/"}
         ],
         [
             {"text": "🎁 優惠領取｜聯絡客服", "url": "https://t.me/yu_888yu"}

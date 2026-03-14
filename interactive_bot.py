@@ -305,11 +305,11 @@ def _build_welcome_keyboard(user_id: int) -> InlineKeyboardMarkup:
     game_link = f"{GAME_URL}?tgid={user_id}"
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🇹🇼 台站",   url="http://La1111.meta1788.com"),
-            InlineKeyboardButton("🇭🇰 U站",    url="http://la1111.ofa168kh.com"),
+            InlineKeyboardButton("🇹🇼 台站",   url="http://La1111.meta1788.com/"),
+            InlineKeyboardButton("🇭🇰 U站",    url="http://la1111.ofa168kh.com/"),
         ],
         [
-            InlineKeyboardButton("🇰🇭 代理入口", url="http://la1111.ofa168kh.com"),
+            InlineKeyboardButton("🇰🇭 代理入口", url="http://la1111.ofa168kh.com/"),
         ],
         [
             InlineKeyboardButton("🆕 免費開戶註冊", url=game_link),
@@ -395,9 +395,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             welcome_text = (
                 "🏆 歡迎來到 LA1 智能服務平台！\n\n"
                 "🌐 平台入口：\n"
-                "🇹🇼 台站｜La1111.meta1788.com\n"
-                "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com\n"
-                "🇰🇭 代理｜la1111.ofa168kh.com"
+                "🇹🇼 台站｜La1111.meta1788.com/\n"
+                "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com/\n"
+                "🇰🇭 代理｜la1111.ofa168kh.com/"
             )
             await update.channel_post.reply_text(welcome_text)
         return
@@ -427,9 +427,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✅ AI 勝率預測與比賽分析\n"
         "✅ 🎰 L幣 539 彩票遊戲\n\n"
         "🌐 平台入口：\n"
-        "🇹🇼 台站｜La1111.meta1788.com\n"
-        "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com\n"
-        "🇰🇭 代理｜la1111.ofa168kh.com\n\n"
+        "🇹🇼 台站｜La1111.meta1788.com/\n"
+        "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com/\n"
+        "🇰🇭 代理｜la1111.ofa168kh.com/\n\n"
         "🤝 商務合作：https://t.me/OFA168Abe1\n\n"
         "🎰 輸入 /539 開始 L幣 539 彩票！\n\n"
         "🎮 點擊下方按鈕立即進入！"
@@ -1057,9 +1057,9 @@ async def dispatch_message(update: Update, context: ContextTypes.DEFAULT_TYPE, t
             "老闆您好 👋\n\n"
             "請使用以下入口註冊：\n\n"
             "🇹🇼 台站\n"
-            "http://La1111.meta1788.com\n\n"
+            "http://La1111.meta1788.com/\n\n"
             "🌏 U站\n"
-            "http://la1111.ofa168kh.com"
+            "http://la1111.ofa168kh.com/"
         )
         return
 
@@ -1292,9 +1292,9 @@ async def send_first_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "✅ 📊 社群趨勢洞察 + 個人喜好記憶\n"
         "✅ 直接問任何體育問題，不需要指令！\n\n"
         "🌐 平台入口：\n"
-        "🇹🇼 台站｜La1111.meta1788.com\n"
-        "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com\n"
-        "🇰🇭 代理｜la1111.ofa168kh.com\n\n"
+        "🇹🇼 台站｜La1111.meta1788.com/\n"
+        "🇭🇰🇲🇾🇲🇴🇻🇳 U站｜la1111.ofa168kh.com/\n"
+        "🇰🇭 代理｜la1111.ofa168kh.com/\n\n"
         "🤝 商務合作：https://t.me/OFA168Abe1\n\n"
         "🎮 點擊下方【遊戲】按鈕立即進入！"
     )
