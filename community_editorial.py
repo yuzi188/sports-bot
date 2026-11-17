@@ -61,11 +61,12 @@ class Editorial:
             for event in board.get('events', []):
                 item = fixture(event,s,l,n)
                 if item and before_start(item,now) and datetime.fromisoformat(item['kickoff'].replace('Z','+00:00')) < now+timedelta(hours=48):
+                    item['scoreboard_date'] = d
                     items[item['id']] = item
         return sorted(items.values(), key=lambda x:x['kickoff'])
 
     async def fresh(self, item):
-        date = datetime.fromisoformat(item['kickoff'].replace('Z','+00:00')).strftime('%Y%m%d')
+        date = item.get('scoreboard_date') or datetime.fromisoformat(item['kickoff'].replace('Z','+00:00')).strftime('%Y%m%d')
         data = await asyncio.to_thread(get_scoreboard,item['sport'],item['league'],date)
         for event in data.get('events', []):
             if str(event['id']) == item['id']:
