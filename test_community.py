@@ -2,6 +2,8 @@ import tempfile
 import unittest
 from types import SimpleNamespace as NS
 from community_bot import Store, Community, event_line
+from community_editorial import before_start, result_for
+from datetime import datetime, timezone
 
 
 class Checks(unittest.TestCase):
@@ -38,6 +40,19 @@ class Checks(unittest.TestCase):
         self.assertIsNone(event_line(event,'英超','2026-11-16'))
         self.assertIsNone(event_line(event,'英超','2026-11-17',True))
         self.assertIsNone(event_line({},'英超','2026-11-17'))
+
+    def test_no_late_picks_or_unfinished_settlement(self):
+        item = dict(state='pre',kickoff='2026-11-17T08:00:00Z',completed=False,
+                    sport='soccer',detail='Full Time',home_score='2',away_score='1')
+        self.assertTrue(before_start(item,datetime(2026,11,17,7,tzinfo=timezone.utc)))
+        self.assertFalse(before_start(item,datetime(2026,11,17,8,tzinfo=timezone.utc)))
+        self.assertIsNone(result_for(item))
+        item.update(state='post',completed=True)
+        self.assertEqual(result_for(item),'home')
+        item['detail']='After Penalties'
+        self.assertIsNone(result_for(item))
+        item.update(sport='basketball',home_score='90',away_score='100')
+        self.assertEqual(result_for(item),'away')
 
 
 if __name__=='__main__':

@@ -10,10 +10,12 @@ from zoneinfo import ZoneInfo
 
 from openai import AsyncOpenAI
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest, Forbidden
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 from espn_api import get_scoreboard
 from modules.security import check_message
+from community_editorial import Editorial
 
 TZ = ZoneInfo("Asia/Taipei")
 LEAGUES = [("soccer", "eng.1", "英超"), ("soccer", "esp.1", "西甲"),
@@ -90,6 +92,7 @@ class Community:
         self.ai_limit = asyncio.Semaphore(2)
         self.cache = None
         self.fetch_lock = asyncio.Lock()
+        self.editorial = Editorial(self, LEAGUES, TZ)
 
     def allowed(self, update, admin=False):
         user, chat = update.effective_user, update.effective_chat
@@ -141,7 +144,7 @@ class Community:
 
     async def command(self, update, context):
         command = update.message.text.split()[0].split("@")[0][1:]
-        admin = command in {"draft","publish","autopost","status","poll"}
+        admin = command in {"draft","publish","autopost","status","poll","pick"}
         if not self.allowed(update, admin):
             return
         check = check_message(update.effective_user.id, update.message.text)
@@ -152,9 +155,19 @@ class Community:
             text = "LA1 社群助手\n/today 今日賽程與賽果\n/live 即場比分\n/ask 問題 — GPT 賽事討論\n群組中可 @我，或回覆我的訊息。"
             if update.effective_user.id in self.admins:
                 text += "\n\n管理員私訊：\n/draft 主題 — 產生貼文預覽\n/publish 編號 — 發布指定預覽\n/poll 問題 | 選項一 | 選項二\n/autopost on 或 off — 每天 10:00、22:00 發布賽程賽果\n/status 檢查連線"
+                text += "\n/focus 未來 48 小時賽事\n/pick 賽事編號 — 建立賽前模擬注單\n/review 完整模擬復盤"
             await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("前往 LA1 社群",url="https://t.me/LA11118")]]))
         elif command in {"today","live"}:
             await update.message.reply_text(await self.board(command == "live"))
+        elif command == "focus":
+            await update.message.reply_text(await self.editorial.focus())
+        elif command == "review":
+            await update.message.reply_text(await self.editorial.review())
+        elif command == "pick":
+            if len(context.args) != 1 or not context.args[0].isdigit():
+                await update.message.reply_text("先用 /focus 查看賽事，再輸入 /pick 賽事編號。")
+                return
+            await update.message.reply_text(await self.editorial.pick(context.args[0]))
         elif command in {"ask","draft"}:
             prompt = " ".join(context.args).strip()
             if not prompt:
@@ -170,6 +183,9 @@ class Community:
                 await update.message.reply_text("請輸入 /publish 貼文編號")
                 return
             post_id = int(context.args[0])
+            if not await self.editorial.can_publish(post_id):
+                await update.message.reply_text("此預測已過開賽時間或賽事狀態無法確認，不再發布為賽前預測。")
+                return
             text = self.store.claim(post_id)
             if not text:
                 await update.message.reply_text("此預覽不存在、已發布或正等待確認發送結果。")
@@ -190,8 +206,17 @@ class Community:
             await context.bot.send_poll(self.channel, parts[0], parts[1:], is_anonymous=True)
             await update.message.reply_text("投票已發布。")
         elif command == "status":
-            member = await context.bot.get_chat_member(self.channel,context.bot.id)
-            await update.message.reply_text(f'機器人在線\n頻道：{self.channel}\n頻道角色：{member.status}\n自動摘要：{self.store.enabled()}\nGPT：待 /ask 實際呼叫驗證')
+            roles = []
+            for label, chat_id in [("頻道", self.channel), ("討論群", self.group)]:
+                try:
+                    member = await context.bot.get_chat_member(chat_id, context.bot.id)
+                    role = member.status
+                    if label == "頻道":
+                        role += "（可發文）" if getattr(member, "can_post_messages", False) else "（無發文權限）"
+                except (BadRequest, Forbidden):
+                    role = "尚未加入或無法讀取權限"
+                roles.append(f"{label}：{role}")
+            await update.message.reply_text('機器人在線\n'+'\n'.join(roles)+f'\n自動摘要：{"開啟" if self.store.enabled() else "關閉"}\nGPT：可用 /ask 測試回覆')
 
     async def send_post(self, bot, post_id, text):
         try:
@@ -254,7 +279,7 @@ def main():
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     service = Community()
     app = Application.builder().token(os.environ["BOT_TOKEN"]).post_init(service.initialize).build()
-    for command in ["start","help","today","live","ask","draft","publish","autopost","status","poll"]:
+    for command in ["start","help","today","live","ask","draft","publish","autopost","status","poll","focus","pick","review"]:
         app.add_handler(CommandHandler(command,service.command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS,service.welcome))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,service.message))
