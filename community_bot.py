@@ -152,15 +152,23 @@ class Community:
             item['local_start'] = datetime.fromisoformat(item['kickoff'].replace('Z','+00:00')).astimezone(TZ).strftime('%m/%d %H:%M UTC+8')
         if '來源暫時無法連線' in board and not upcoming:
             raise ValueError('sports_source_unavailable')
-        content = await self.generate(
-            f'寫一篇 LA1 每日{label}討論，約250字。只談{label}。從資料選1至3場焦點，'
-            '分清已完場回顧與未開賽觀點；直接照抄local_start時間，不自行換算。沒有相關賽事就清楚說明。'
-            '比分不能證明控球、反擊、防守效率、默契或戰術，這些沒有數據不得寫成事實。'
-            'records是賽季紀錄，不是最近五場；form不足不能宣稱近期狀態或熱門冷門。'
-            '不可把賽後比分寫成事前預測，不捏造熱門程度、戰績、盤口或注單。'
-            '以一個具體討論問題收尾。',
-            json.dumps({'today':board,'upcoming':upcoming},ensure_ascii=False))
-        return f'LA1｜每日{label}討論｜{datetime.now(TZ):%m/%d}\n\n{content}\n\n賽事資料：ESPN｜時間 UTC+8；觀點僅供討論。'
+        # Keep factual fields out of model prose: the model previously mistranslated teams.
+        today = [line for line in board.splitlines() if line.startswith('[')][:3]
+        fixtures = [f"{x['local_start']}｜{x['label']}\n{x['home']} vs {x['away']}" for x in upcoming[:3]]
+        question = await self.generate(
+            f'只寫一句{label}觀賽討論問題，以問號結尾，50字內。'
+            '不提任何球隊、人名、日期、數字、近期表現、比分或已發生的事件；'
+            '只詢問觀眾看比賽時最重視的戰術或觀察角度。不要標題或其他文字。',
+            '這是一句一般觀賽提問，沒有特定賽事事實。')
+        if len(question)>80 or not question.endswith(('？','?')) or any(c.isdigit() for c in question):
+            question = '你看比賽時，最重視進攻節奏還是防守安排？'
+        checklist = ('觀察重點：留意失誤控制、籃板與輪替安排；單場比分不足以判斷球隊長期實力。'
+                     if sport=='basketball' else
+                     '觀察重點：留意攻守轉換、定位球與先發安排；沒有陣容資料時，先保留判斷。')
+        return (f'LA1｜每日{label}討論｜{datetime.now(TZ):%m/%d}\n\n'
+                +'今日賽況\n'+('\n'.join(today) or '目前未取得符合條件的今日賽事。')
+                +'\n\n未來48小時焦點候選（按時間）\n'+('\n\n'.join(fixtures) or '目前沒有可確認的未開賽場次。')
+                +f'\n\n{checklist}\n\n留言傾下：{question}\n\n賽事資料：ESPN｜時間 UTC+8；比分可能延遲。')
 
     async def command(self, update, context):
         command = update.message.text.split()[0].split("@")[0][1:]
