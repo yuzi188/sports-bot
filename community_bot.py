@@ -16,6 +16,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from espn_api import get_scoreboard
 from modules.security import check_message
 from community_editorial import Editorial
+from community_cover import daily_cover
 
 TZ = ZoneInfo("Asia/Taipei")
 LEAGUES = [("soccer", "eng.1", "英超"), ("soccer", "esp.1", "西甲"),
@@ -192,6 +193,7 @@ class Community:
                 await update.message.reply_text('用 /daily soccer 或 /daily basketball 預覽每日文章。')
                 return
             text = await self.daily_article(context.args[0])
+            await update.message.reply_photo(daily_cover(text),caption=text.splitlines()[0])
             await update.message.reply_text('每日文章預覽（未發布）\n\n'+text)
         elif command == "focus":
             await update.message.reply_text(await self.editorial.focus())
@@ -254,6 +256,8 @@ class Community:
 
     async def send_post(self, bot, post_id, text):
         try:
+            if text.startswith(('LA1｜每日籃球','LA1｜每日足球')):
+                await bot.send_photo(self.channel,daily_cover(text),caption=text.splitlines()[0])
             await bot.send_message(self.channel,text)
         except Exception:
             # An HTTP timeout may occur after delivery: never retry automatically.
