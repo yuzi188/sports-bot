@@ -21,6 +21,7 @@ TZ = ZoneInfo("Asia/Taipei")
 LEAGUES = [("soccer", "eng.1", "英超"), ("soccer", "esp.1", "西甲"),
            ("soccer", "ger.1", "德甲"), ("soccer", "ita.1", "意甲"),
            ("soccer", "fra.1", "法甲"), ("soccer", "uefa.champions", "歐冠"),
+           ("soccer", "uefa.nations", "歐洲國家聯賽"),
            ("basketball", "nba", "NBA"), ("baseball", "mlb", "MLB")]
 SYSTEM = """你是 LA1 社群助手，使用繁體中文，簡潔自然地討論體育。
 賽程、比分與最新事實只能引用提供的資料；缺資料明確說明。區分事實與觀點。
