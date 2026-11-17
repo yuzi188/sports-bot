@@ -2,6 +2,9 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+.env.*
+!.env.example
+.venv/
 *.log
 
 # SQLite 資料庫（用戶數據，不儲入版控）
