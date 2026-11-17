@@ -148,11 +148,15 @@ class Community:
         label = {'basketball':'籃球', 'soccer':'足球'}[sport]
         board = await self.board(sport=sport)
         upcoming = [x for x in await self.editorial.upcoming() if x['sport'] == sport][:6]
+        for item in upcoming:
+            item['local_start'] = datetime.fromisoformat(item['kickoff'].replace('Z','+00:00')).astimezone(TZ).strftime('%m/%d %H:%M UTC+8')
         if '來源暫時無法連線' in board and not upcoming:
             raise ValueError('sports_source_unavailable')
         content = await self.generate(
             f'寫一篇 LA1 每日{label}討論，約250字。只談{label}。從資料選1至3場焦點，'
-            '分清已完場回顧與未開賽觀點；時間轉成UTC+8。沒有相關賽事就清楚說明。'
+            '分清已完場回顧與未開賽觀點；直接照抄local_start時間，不自行換算。沒有相關賽事就清楚說明。'
+            '比分不能證明控球、反擊、防守效率、默契或戰術，這些沒有數據不得寫成事實。'
+            'records是賽季紀錄，不是最近五場；form不足不能宣稱近期狀態或熱門冷門。'
             '不可把賽後比分寫成事前預測，不捏造熱門程度、戰績、盤口或注單。'
             '以一個具體討論問題收尾。',
             json.dumps({'today':board,'upcoming':upcoming},ensure_ascii=False))
