@@ -103,7 +103,7 @@ class Community:
             return chat.type == "private" and user.id in self.admins
         return (chat.type == "private" or chat.id == self.group)
 
-    async def board(self, live=False):
+    async def board(self, live=False, sport=None):
         now = datetime.now(TZ)
         async with self.fetch_lock:
             if not self.cache or (now-self.cache[0]).total_seconds() > 120:
@@ -122,7 +122,8 @@ class Community:
         stamp, rows, successes = self.cache
         if not successes:
             return "賽事來源暫時無法連線，未取得最新資料。"
-        lines = [event_line(e,l,now.date().isoformat(),live) for e,l in rows]
+        labels = {n for s,l,n in LEAGUES if not sport or s == sport}
+        lines = [event_line(e,l,now.date().isoformat(),live) for e,l in rows if l in labels]
         lines = [line for line in lines if line]
         title = "即場比分" if live else "今日賽程與賽果"
         result = "\n".join(lines[:24]) or "目前支援聯賽沒有符合條件的賽事。"
@@ -130,9 +131,9 @@ class Community:
             result += "\n部分聯賽資料暫時未取得。"
         return f'LA1｜{title}\n{stamp:%Y/%m/%d %H:%M}（UTC+8）\n{result}\n資料來源：ESPN；比分可能延遲。'
 
-    async def generate(self, prompt):
+    async def generate(self, prompt, data=None):
         async with self.ai_limit:
-            context = await self.board()
+            context = data if data is not None else await self.board()
             response = await self.ai.chat.completions.create(
                 model=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"),
                 messages=[{"role":"system","content":SYSTEM},
@@ -143,9 +144,23 @@ class Community:
                 raise ValueError("incomplete_response")
             return choice.message.content[:3500]
 
+    async def daily_article(self, sport):
+        label = {'basketball':'籃球', 'soccer':'足球'}[sport]
+        board = await self.board(sport=sport)
+        upcoming = [x for x in await self.editorial.upcoming() if x['sport'] == sport][:6]
+        if '來源暫時無法連線' in board and not upcoming:
+            raise ValueError('sports_source_unavailable')
+        content = await self.generate(
+            f'寫一篇 LA1 每日{label}討論，約250字。只談{label}。從資料選1至3場焦點，'
+            '分清已完場回顧與未開賽觀點；時間轉成UTC+8。沒有相關賽事就清楚說明。'
+            '不可把賽後比分寫成事前預測，不捏造熱門程度、戰績、盤口或注單。'
+            '以一個具體討論問題收尾。',
+            json.dumps({'today':board,'upcoming':upcoming},ensure_ascii=False))
+        return f'LA1｜每日{label}討論｜{datetime.now(TZ):%m/%d}\n\n{content}\n\n賽事資料：ESPN｜時間 UTC+8；觀點僅供討論。'
+
     async def command(self, update, context):
         command = update.message.text.split()[0].split("@")[0][1:]
-        admin = command in {"draft","publish","autopost","status","poll","pick"}
+        admin = command in {"draft","publish","autopost","status","poll","pick","daily"}
         if not self.allowed(update, admin):
             return
         check = check_message(update.effective_user.id, update.message.text)
@@ -160,6 +175,12 @@ class Community:
             await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("前往 LA1 社群",url="https://t.me/LA11118")]]))
         elif command in {"today","live"}:
             await update.message.reply_text(await self.board(command == "live"))
+        elif command == "daily":
+            if context.args not in [["soccer"],["basketball"]]:
+                await update.message.reply_text('用 /daily soccer 或 /daily basketball 預覽每日文章。')
+                return
+            text = await self.daily_article(context.args[0])
+            await update.message.reply_text('每日文章預覽（未發布）\n\n'+text)
         elif command == "focus":
             await update.message.reply_text(await self.editorial.focus())
         elif command == "review":
@@ -198,7 +219,7 @@ class Community:
                 await update.message.reply_text("用 /autopost on 開啟，或 /autopost off 暫停。")
                 return
             self.store.set_auto(context.args[0])
-            await update.message.reply_text("自動賽事摘要："+context.args[0]+"（每天 10:00、22:00，UTC+8）")
+            await update.message.reply_text("每日文章："+context.args[0]+"（10:00 籃球、22:00 足球，每類一篇，UTC+8）")
         elif command == "poll":
             parts = [s.strip() for s in " ".join(context.args).split("|")]
             if not 3 <= len(parts) <= 11 or not all(parts) or len(parts[0]) > 250 or any(len(s)>80 for s in parts[1:]):
@@ -252,9 +273,9 @@ class Community:
             return
         now = datetime.now(TZ)
         slot = now.strftime("%Y-%m-%d")+"-"+context.job.name
-        text = await self.board()
-        if "來源暫時無法連線" in text:
+        if self.store.db.execute('SELECT 1 FROM posts WHERE slot=?',(slot,)).fetchone():
             return
+        text = await self.daily_article(context.job.data)
         post_id = self.store.draft(text,slot)
         if post_id:
             text = self.store.claim(post_id)
@@ -280,13 +301,13 @@ def main():
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     service = Community()
     app = Application.builder().token(os.environ["BOT_TOKEN"]).post_init(service.initialize).build()
-    for command in ["start","help","today","live","ask","draft","publish","autopost","status","poll","focus","pick","review"]:
+    for command in ["start","help","today","live","ask","draft","publish","autopost","status","poll","focus","pick","review","daily"]:
         app.add_handler(CommandHandler(command,service.command))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS,service.welcome))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,service.message))
     app.add_error_handler(on_error)
-    for hour in (10,22):
-        app.job_queue.run_daily(service.scheduled,time(hour,tzinfo=TZ),name=str(hour))
+    for hour, sport in [(10,'basketball'),(22,'soccer')]:
+        app.job_queue.run_daily(service.scheduled,time(hour,tzinfo=TZ),name=sport,data=sport)
     app.run_polling(allowed_updates=["message"],drop_pending_updates=False)
 
 
