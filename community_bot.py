@@ -314,6 +314,12 @@ class Community:
                 await context.bot.send_message(admin_id,
                     f'{context.job.name} 圖文未發布：賽程資料不足或生成檢查未通過。請用 /daily {context.job.data} 檢查；未發純文字替代稿。')
             raise
+        bundle = unpack(text)
+        # A manually published daily preview already covers this sport/match date.
+        for (previous_text,) in self.store.db.execute("SELECT text FROM posts WHERE status='sent'"):
+            previous = unpack(previous_text)
+            if previous and bundle and (previous['sport'], previous['date']) == (bundle['sport'], bundle['date']):
+                return
         post_id = self.store.draft(text,slot)
         if post_id:
             text = self.store.claim(post_id)
