@@ -54,8 +54,7 @@ async def make_daily(service, sport, tz):
         raise ValueError('no_upcoming_fixtures')
     match_date = datetime.fromisoformat(items[0]['kickoff'].replace('Z','+00:00')).astimezone(tz).date()
     items = [x.copy() for x in items if datetime.fromisoformat(x['kickoff'].replace('Z','+00:00')).astimezone(tz).date() == match_date]
-    if sport == 'basketball':
-        items.sort(key=record_gap, reverse=True)
+    items.sort(key=record_gap, reverse=True)
     items = sorted(items[:5], key=lambda x:x['kickoff'])
     fields = {
         'id': {'type':'string','enum':[x['id'] for x in items]},
@@ -97,6 +96,8 @@ async def make_daily(service, sport, tz):
                 raise ValueError('invalid_daily_copy')
             item[key] = pred[key].strip()
         item['choice'] = pred['choice']
+        if sport == 'soccer' and overall(item,'home') and overall(item,'away'):
+            item['reason'] = f"勝和負：主{overall(item,'home')}、客{overall(item,'away')}；留意臨場陣容。"
         if sport == 'basketball':
             for side in ('home','away'):
                 item[side+'_zh'] = NBA_NAMES.get(item[side],item[side+'_zh'])
