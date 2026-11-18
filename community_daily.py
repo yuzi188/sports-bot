@@ -4,6 +4,20 @@ import os
 from datetime import datetime
 
 VERSION = 'daily-v2'
+NBA_NAMES = dict(zip(
+    ['Atlanta Hawks','Boston Celtics','Brooklyn Nets','Charlotte Hornets','Chicago Bulls','Cleveland Cavaliers','Dallas Mavericks','Denver Nuggets','Detroit Pistons','Golden State Warriors','Houston Rockets','Indiana Pacers','LA Clippers','Los Angeles Clippers','Los Angeles Lakers','Memphis Grizzlies','Miami Heat','Milwaukee Bucks','Minnesota Timberwolves','New Orleans Pelicans','New York Knicks','Oklahoma City Thunder','Orlando Magic','Philadelphia 76ers','Phoenix Suns','Portland Trail Blazers','Sacramento Kings','San Antonio Spurs','Toronto Raptors','Utah Jazz','Washington Wizards'],
+    ['鷹隊','塞爾特人','籃網','黃蜂','公牛','騎士','獨行俠','金塊','活塞','勇士','火箭','溜馬','快艇','快艇','湖人','灰熊','熱火','公鹿','木狼','鵜鶘','紐約人','雷霆','魔術','76人','太陽','拓荒者','帝王','馬刺','速龍','爵士','巫師']))
+
+def overall(item, side):
+    return next((r.get('summary','') for r in item[side+'_records'] if r.get('type')=='total'), '')
+
+def record_gap(item):
+    # Screening criterion only, NOT a calibrated probability or profitability score.
+    try:
+        h, a = ([int(n) for n in overall(item,side).split('-')] for side in ('home','away'))
+        return abs(h[0]/sum(h)-a[0]/sum(a))
+    except (ValueError, ZeroDivisionError, IndexError):
+        return -1
 
 def unpack(text):
     if not text.startswith('{'):
@@ -39,7 +53,10 @@ async def make_daily(service, sport, tz):
     if not items:
         raise ValueError('no_upcoming_fixtures')
     match_date = datetime.fromisoformat(items[0]['kickoff'].replace('Z','+00:00')).astimezone(tz).date()
-    items = [x.copy() for x in items if datetime.fromisoformat(x['kickoff'].replace('Z','+00:00')).astimezone(tz).date() == match_date][:5]
+    items = [x.copy() for x in items if datetime.fromisoformat(x['kickoff'].replace('Z','+00:00')).astimezone(tz).date() == match_date]
+    if sport == 'basketball':
+        items.sort(key=record_gap, reverse=True)
+    items = sorted(items[:5], key=lambda x:x['kickoff'])
     fields = {
         'id': {'type':'string','enum':[x['id'] for x in items]},
         'home_zh': {'type':'string','minLength':1,'maxLength':16},
@@ -80,6 +97,11 @@ async def make_daily(service, sport, tz):
                 raise ValueError('invalid_daily_copy')
             item[key] = pred[key].strip()
         item['choice'] = pred['choice']
+        if sport == 'basketball':
+            for side in ('home','away'):
+                item[side+'_zh'] = NBA_NAMES.get(item[side],item[side+'_zh'])
+            if overall(item,'home') and overall(item,'away'):
+                item['reason'] = f"全季主隊{overall(item,'home')}、客隊{overall(item,'away')}；留意臨場陣容。"
         item['local_start'] = datetime.fromisoformat(item['kickoff'].replace('Z','+00:00')).astimezone(tz).strftime('%m/%d %H:%M')
     question = data.get('question')
     if not isinstance(question,str) or not 0 < len(question) <= 30:
