@@ -11,12 +11,14 @@ from zoneinfo import ZoneInfo
 from openai import AsyncOpenAI
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest, Forbidden
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
 from espn_api import get_scoreboard
 from modules.security import check_message
 from community_editorial import Editorial
 from community_cover import daily_cover
+from community_daily import make_daily, unpack, caption, VERSION
+from community_editorial import before_start
 
 TZ = ZoneInfo("Asia/Taipei")
 LEAGUES = [("soccer", "eng.1", "英超"), ("soccer", "esp.1", "西甲"),
@@ -55,6 +57,7 @@ class Store:
         self.db = sqlite3.connect(path)
         self.db.execute("CREATE TABLE IF NOT EXISTS posts (id INTEGER PRIMARY KEY, text TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', slot TEXT UNIQUE)")
         self.db.execute("CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT)")
+        self.db.execute("CREATE TABLE IF NOT EXISTS deliveries (post_id INTEGER PRIMARY KEY, chat_id TEXT, message_id INTEGER)")
         self.db.commit()
 
     def draft(self, text, slot=None):
@@ -146,30 +149,7 @@ class Community:
             return choice.message.content[:3500]
 
     async def daily_article(self, sport):
-        label = {'basketball':'籃球', 'soccer':'足球'}[sport]
-        board = await self.board(sport=sport)
-        upcoming = [x for x in await self.editorial.upcoming() if x['sport'] == sport][:6]
-        for item in upcoming:
-            item['local_start'] = datetime.fromisoformat(item['kickoff'].replace('Z','+00:00')).astimezone(TZ).strftime('%m/%d %H:%M UTC+8')
-        if '來源暫時無法連線' in board and not upcoming:
-            raise ValueError('sports_source_unavailable')
-        # Keep factual fields out of model prose: the model previously mistranslated teams.
-        today = [line for line in board.splitlines() if line.startswith('[')][:3]
-        fixtures = [f"{x['local_start']}｜{x['label']}\n{x['home']} vs {x['away']}" for x in upcoming[:3]]
-        question = await self.generate(
-            f'只寫一句{label}觀賽討論問題，以問號結尾，50字內。'
-            '不提任何球隊、人名、日期、數字、近期表現、比分或已發生的事件；'
-            '只詢問觀眾看比賽時最重視的戰術或觀察角度。不要標題或其他文字。',
-            '這是一句一般觀賽提問，沒有特定賽事事實。')
-        if len(question)>80 or not question.endswith(('？','?')) or any(c.isdigit() for c in question):
-            question = '你看比賽時，最重視進攻節奏還是防守安排？'
-        checklist = ('觀察重點：留意失誤控制、籃板與輪替安排；單場比分不足以判斷球隊長期實力。'
-                     if sport=='basketball' else
-                     '觀察重點：留意攻守轉換、定位球與先發安排；沒有陣容資料時，先保留判斷。')
-        return (f'LA1｜每日{label}討論｜{datetime.now(TZ):%m/%d}\n\n'
-                +'今日賽況\n'+('\n'.join(today) or '目前未取得符合條件的今日賽事。')
-                +'\n\n未來48小時焦點候選（按時間）\n'+('\n\n'.join(fixtures) or '目前沒有可確認的未開賽場次。')
-                +f'\n\n{checklist}\n\n留言傾下：{question}\n\n賽事資料：ESPN｜時間 UTC+8；比分可能延遲。')
+        return await make_daily(self, sport, TZ)
 
     async def command(self, update, context):
         command = update.message.text.split()[0].split("@")[0][1:]
@@ -193,8 +173,10 @@ class Community:
                 await update.message.reply_text('用 /daily soccer 或 /daily basketball 預覽每日文章。')
                 return
             text = await self.daily_article(context.args[0])
-            await update.message.reply_photo(daily_cover(text),caption=text.splitlines()[0])
-            await update.message.reply_text('每日文章預覽（未發布）\n\n'+text)
+            post = unpack(text)
+            post_id = self.store.draft(text)
+            await update.message.reply_photo(daily_cover(post),caption=caption(post),
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(f'發布預覽 #{post_id}',callback_data=f'publish:{post_id}')]]))
         elif command == "focus":
             await update.message.reply_text(await self.editorial.focus())
         elif command == "review":
@@ -252,18 +234,50 @@ class Community:
                 except (BadRequest, Forbidden):
                     role = "尚未加入或無法讀取權限"
                 roles.append(f"{label}：{role}")
-            await update.message.reply_text('機器人在線\n'+'\n'.join(roles)+f'\n自動摘要：{"開啟" if self.store.enabled() else "關閉"}\nGPT：可用 /ask 測試回覆')
+            await update.message.reply_text(f'機器人在線｜{VERSION}\n'+'\n'.join(roles)+f'\n自動摘要：{"開啟" if self.store.enabled() else "關閉"}\nGPT：可用 /ask 測試回覆')
 
     async def send_post(self, bot, post_id, text):
+        post = unpack(text)
         try:
-            if text.startswith(('LA1｜每日籃球','LA1｜每日足球')):
-                await bot.send_photo(self.channel,daily_cover(text),caption=text.splitlines()[0])
-            await bot.send_message(self.channel,text)
+            if post:
+                for item in post['fixtures']:
+                    fresh = await self.editorial.fresh(item)
+                    if not fresh or not before_start(fresh):
+                        self.store.finish(post_id, 'expired')
+                        raise ValueError('daily_no_longer_pregame')
+                photo, body = daily_cover(post), caption(post)
+            elif text.startswith(('LA1｜每日籃球','LA1｜每日足球')):
+                raise ValueError('legacy_daily_requires_regeneration')
         except Exception:
-            # An HTTP timeout may occur after delivery: never retry automatically.
-            self.store.finish(post_id,"unknown")
+            self.store.finish(post_id, 'failed')
             raise
-        self.store.finish(post_id,"sent")
+        try:
+            if post:
+                message = await bot.send_photo(self.channel, photo, caption=body)
+            else:
+                message = await bot.send_message(self.channel, text)
+        except Exception:
+            # A timeout may follow delivery: never fall back to text or resend.
+            self.store.finish(post_id, 'unknown')
+            raise
+        self.store.finish(post_id, 'sent')
+        with self.store.db:
+            self.store.db.execute('INSERT OR REPLACE INTO deliveries VALUES (?,?,?)',
+                (post_id, str(message.chat_id), message.message_id))
+
+    async def publish_button(self, update, context):
+        query = update.callback_query
+        if query.from_user.id not in self.admins or query.message.chat.type != 'private':
+            await query.answer('僅限管理員私訊操作', show_alert=True)
+            return
+        await query.answer()
+        post_id = int(query.data.split(':')[1])
+        text = self.store.claim(post_id)
+        if not text:
+            return
+        await self.send_post(context.bot, post_id, text)
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(f'已發布 #{post_id}：一張賽程圖＋完整內文。')
 
     async def message(self, update, context):
         if not self.allowed(update):
@@ -291,7 +305,14 @@ class Community:
         slot = now.strftime("%Y-%m-%d")+"-"+context.job.name
         if self.store.db.execute('SELECT 1 FROM posts WHERE slot=?',(slot,)).fetchone():
             return
-        text = await self.daily_article(context.job.data)
+        try:
+            text = await self.daily_article(context.job.data)
+        except Exception:
+            # Never silently substitute an old, text-only article after generation failure.
+            for admin_id in self.admins:
+                await context.bot.send_message(admin_id,
+                    f'{context.job.name} 圖文未發布：賽程資料不足或生成檢查未通過。請用 /daily {context.job.data} 檢查；未發純文字替代稿。')
+            raise
         post_id = self.store.draft(text,slot)
         if post_id:
             text = self.store.claim(post_id)
@@ -319,12 +340,13 @@ def main():
     app = Application.builder().token(os.environ["BOT_TOKEN"]).post_init(service.initialize).build()
     for command in ["start","help","today","live","ask","draft","publish","autopost","status","poll","focus","pick","review","daily"]:
         app.add_handler(CommandHandler(command,service.command))
+    app.add_handler(CallbackQueryHandler(service.publish_button, pattern=r'^publish:[0-9]+$'))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS,service.welcome))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND,service.message))
     app.add_error_handler(on_error)
     for hour, sport in [(10,'basketball'),(22,'soccer')]:
         app.job_queue.run_daily(service.scheduled,time(hour,tzinfo=TZ),name=sport,data=sport)
-    app.run_polling(allowed_updates=["message"],drop_pending_updates=False)
+    app.run_polling(allowed_updates=["message", "callback_query"],drop_pending_updates=False)
 
 
 if __name__ == "__main__":
