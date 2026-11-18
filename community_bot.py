@@ -328,6 +328,11 @@ class Community:
 
 async def on_error(update, context):
     logging.error("Community operation failed: %s",type(context.error).__name__)
+    safe_codes = {'no_upcoming_fixtures', 'daily_caption_too_long', 'incomplete_daily',
+                  'daily_fixture_mismatch', 'invalid_daily_choice', 'invalid_daily_copy',
+                  'invalid_daily_question', 'CJK_font_missing', 'daily_no_longer_pregame'}
+    if str(context.error) in safe_codes:
+        logging.error('Validation: %s', str(context.error))
     if update and update.effective_message:
         await update.effective_message.reply_text("目前無法完成操作，請稍後再試。若是發布逾時，請先查看頻道，避免重複發布。")
 
