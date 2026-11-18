@@ -71,7 +71,7 @@ async def make_daily(service, sport, tz):
         item['local_start'] = datetime.fromisoformat(item['kickoff'].replace('Z','+00:00')).astimezone(tz).strftime('%m/%d %H:%M')
     question = data.get('question')
     if not isinstance(question,str) or not 0 < len(question) <= 30:
-        raise ValueError('invalid_daily_question')
+        question = '今期你最睇好邊隊？邊場最需要防冷？'
     post = dict(format=VERSION, sport=sport, date=str(match_date), created=datetime.now(tz).isoformat(), fixtures=items, question=question)
     caption(post)
     return json.dumps(post,ensure_ascii=False)
